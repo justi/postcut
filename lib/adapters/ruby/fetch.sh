@@ -49,33 +49,33 @@ fetch_ruby_delta() {
   local pre_v cur_v cur_date post_versions
   IFS=$'\t' read -r pre_v cur_v cur_date post_versions <<< "$tsv"
 
-  # Skip if pre_cutoff matches current (no real delta visible to model — would be empty post-cutoff)
-  # This is already enforced by `select(.post | length > 0)`, but defensive.
-
   # 2. Header line
   local pre_label="${pre_v:-(introduced)}"
   printf '%s: %s (last seen) → %s (current, %s)\n' "$name" "$pre_label" "$cur_v" "$cur_date"
 
-  # 3. GitHub enrichment (best-effort).
+  # 3. GitHub enrichment (best-effort). Failures here must NOT abort —
+  # the header is already on stdout, and advisories don't need a repo URL.
   local meta_api="https://rubygems.org/api/v1/gems/${name}.json"
-  local meta_raw
-  meta_raw=$(curl -fsSL --max-time 10 "$meta_api" 2>/dev/null) || return 0
+  local meta_raw=""
+  meta_raw=$(curl -fsSL --max-time 10 "$meta_api" 2>/dev/null) || meta_raw=""
 
-  local repo_uri
-  repo_uri=$(printf '%s' "$meta_raw" | jq -r '
-    .source_code_uri // .metadata.source_code_uri // .homepage_uri // ""
-  ')
+  if [ -n "$meta_raw" ]; then
+    local repo_uri
+    repo_uri=$(printf '%s' "$meta_raw" | jq -r '
+      .source_code_uri // .metadata.source_code_uri // .homepage_uri // ""
+    ' 2>/dev/null) || repo_uri=""
 
-  local gh_repo
-  gh_repo=$(parse_github_repo_from_url "$repo_uri")
+    local gh_repo
+    gh_repo=$(parse_github_repo_from_url "$repo_uri")
 
-  if [ -n "$gh_repo" ]; then
-    local notes
-    notes=$(fetch_github_release_notes "$gh_repo" "$post_versions")
-    if [ -n "$notes" ]; then
-      printf '%s\n' "$notes"
-    else
-      fetch_changelog_md "$gh_repo" "$post_versions"
+    if [ -n "$gh_repo" ]; then
+      local notes
+      notes=$(fetch_github_release_notes "$gh_repo" "$post_versions")
+      if [ -n "$notes" ]; then
+        printf '%s\n' "$notes"
+      else
+        fetch_changelog_md "$gh_repo" "$post_versions"
+      fi
     fi
   fi
 

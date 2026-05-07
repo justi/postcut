@@ -40,7 +40,17 @@ fetch_github_release_notes() {
     | ($vs | split(","))
     | map(
         . as $v
-        | ($releases | map(select(.tag_name | tostring | contains($v))) | first) as $rel
+        | ($releases | map(
+            (.tag_name // "" | tostring) as $tag
+            | select(
+                $tag == $v
+                or $tag == ("v" + $v)
+                or ($tag | endswith("-" + $v))
+                or ($tag | endswith("/" + $v))
+                or ($tag | endswith("-v" + $v))
+                or ($tag | endswith("/v" + $v))
+              )
+          ) | first) as $rel
         | if $rel == null then empty
           else
             ($rel.body // "") as $body

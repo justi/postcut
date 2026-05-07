@@ -77,13 +77,16 @@ if [ "$include_transitive" -eq 0 ] && [ -f "$gemfile" ]; then
   fi
 fi
 
-deltas=$(parse_gemfile_lock "$lockfile" | while read -r name _; do
+deltas=""
+while read -r name _; do
   if [ -n "$filter_regex" ]; then
     [[ "$name" =~ $filter_regex ]] || continue
   fi
-  block=$(fetch_ruby_delta "$name" "$cutoff")
-  [ -n "$block" ] && printf '%s\n\n' "$block"
-done)
+  block=$(fetch_ruby_delta "$name" "$cutoff" 2>/dev/null) || block=""
+  if [ -n "$block" ]; then
+    deltas="${deltas}${block}"$'\n\n'
+  fi
+done < <(parse_gemfile_lock "$lockfile")
 
 echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label, scope: $scope_label):"
 if [ -z "${GITHUB_TOKEN:-}" ]; then
