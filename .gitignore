@@ -1,0 +1,17 @@
+# Internal planning — never publish
+ROADMAP.md
+NOTES.md
+TODO.md
+
+# Local cache
+cache/
+.postcut-cache/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Test fixtures with secrets
+tests/fixtures/private/

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1.0-dev"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# shellcheck source=../lib/core/cutoff.sh
+source "$ROOT/lib/core/cutoff.sh"
+# shellcheck source=../lib/adapters/ruby/parse.sh
+source "$ROOT/lib/adapters/ruby/parse.sh"
+# shellcheck source=../lib/adapters/ruby/fetch.sh
+source "$ROOT/lib/adapters/ruby/fetch.sh"
+
+usage() {
+  cat <<'USAGE'
+postcut — dependency deltas since your LLM's training cutoff.
+
+USAGE:
+  postcut [OPTIONS]
+
+OPTIONS:
+  --model NAME         Model id from models.dev (default: claude-opus-4-7).
+  --since YYYY-MM-DD   Override cutoff date (skips models.dev lookup).
+  --path DIR           Project directory (default: cwd).
+  -h, --help           Show this help.
+  -v, --version        Show version.
+
+V0.1 ONLY: Ruby (Gemfile.lock). Multi-language coming in v0.2.
+USAGE
+}
+
+model="claude-opus-4-7"
+since=""
+path="."
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model)      model="$2"; shift 2 ;;
+    --since)      since="$2"; shift 2 ;;
+    --path)       path="$2"; shift 2 ;;
+    -h|--help)    usage; exit 0 ;;
+    -v|--version) echo "postcut $VERSION"; exit 0 ;;
+    *)            echo "postcut: unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if [ -n "$since" ]; then
+  cutoff="$since"
+  source_label="--since"
+else
+  cutoff=$(resolve_cutoff "$model")
+  source_label="models.dev/$model"
+fi
+
+lockfile="$path/Gemfile.lock"
+if [ ! -f "$lockfile" ]; then
+  echo "postcut: no Gemfile.lock in $path" >&2
+  exit 1
+fi
+
+deltas=$(parse_gemfile_lock "$lockfile" | while read -r name version; do
+  fetch_ruby_delta "$name" "$version" "$cutoff"
+done)
+
+echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label):"
+echo
+if [ -z "$deltas" ]; then
+  echo "(no post-cutoff updates for any gem in $lockfile)"
+else
+  printf '%s\n' "$deltas"
+fi
