@@ -53,31 +53,19 @@ fetch_ruby_delta() {
   local pre_label="${pre_v:-(introduced)}"
   printf '%s: %s (last seen) → %s (current, %s)\n' "$name" "$pre_label" "$cur_v" "$cur_date"
 
-  # 3. Metadata (source URI for the gem's repo) — local via `gem
-  # specification` if Ruby toolchain is present, HTTP fallback otherwise.
+  # Metadata: source URI (local via gem specification, HTTP fallback).
   local repo_uri=""
   repo_uri=$(dispatch metadata ruby "$name") || repo_uri=""
-
+  local gh_repo=""
   if [ -n "$repo_uri" ]; then
-    local gh_repo
     gh_repo=$(parse_github_repo_from_url "$repo_uri")
-
-    if [ -n "$gh_repo" ]; then
-      local notes
-      notes=""
-      notes=$(fetch_github_release_notes "$gh_repo" "$post_versions") || notes=""
-      if [ -n "$notes" ]; then
-        printf '%s\n' "$notes"
-      else
-        fetch_changelog_md "$gh_repo" "$post_versions"
-      fi
-    fi
   fi
 
-  # Advisories: prefer local (bundler-audit + ruby-advisory-db) when the
-  # toolchain is present; fall back to GitHub Advisories API otherwise.
-  # Notes/metadata stay HTTP-only for now — local CHANGELOGs in Rails
-  # monorepo sub-gems regress output (CVE listings live in sibling
-  # sub-gems' files). Revisit when we have per-monorepo strategy.
+  # Notes: local reads CHANGELOG from the gem dir (with Rails sub-gem
+  # stitching for the meta-gem); HTTP fallback uses the already-resolved
+  # gh_repo, dropping back to GitHub Releases → raw CHANGELOG.md.
+  dispatch notes ruby "$name" "$post_versions" "$gh_repo"
+
+  # Advisories: local bundler-audit, fall back to GitHub Advisories API.
   dispatch advisories ruby "$name" "$post_versions"
 }
