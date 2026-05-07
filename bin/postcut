@@ -1,8 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0-dev"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="0.2.0-dev"
+
+# Resolve symlink chain so installs via `ln -s ... /usr/local/bin/postcut`
+# still find the lib/ next to the real script. macOS-friendly (no readlink -f).
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  TARGET="$(readlink "$SOURCE")"
+  if [[ "$TARGET" == /* ]]; then
+    SOURCE="$TARGET"
+  else
+    SOURCE="$(dirname "$SOURCE")/$TARGET"
+  fi
+done
+ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
 
 # shellcheck source=../lib/core/cutoff.sh
 source "$ROOT/lib/core/cutoff.sh"
