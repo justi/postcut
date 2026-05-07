@@ -77,20 +77,30 @@ ruby_local_advisories() {
       | map(select(.gem.name == $pkg))
       | .[]
       | . as $r
-      | ($r.advisory.patched_versions // []) as $patched
-      | $patched
-      | map(. as $pv
-            | ($versions | map(select($pv | contains(.))) | first)) as $matches
-      | $matches
+      # Extract concrete patched versions from constraint strings like
+      # ">= 7.2.1.1", "~> 7.0.8, >= 7.0.8.5", "~> 6.1.7.9". Take the LAST
+      # semver token in each (the most-specific lower bound). Then exact-
+      # match against our post-cutoff versions — avoids the substring
+      # false-positive where ">= 7.0.8.1" matched "7.0.8".
+      | [
+          ($r.advisory.patched_versions // [])[]
+          | [scan("[0-9]+(?:\\.[0-9]+)+")]
+          | last
+        ]
       | map(select(. != null))
+      | map(select(. as $pv | $versions | any(. == $pv)))
       | first as $hit
       | if $hit == null then empty
         else
-          "  \($hit): " +
-          ($r.advisory.ghsa // "no-GHSA" | "GHSA-\(.)") + " " +
-          "[" + ($r.advisory.criticality // "unknown") + "] " +
-          ($r.advisory.cve // "no-CVE" | "CVE-\(.)") + ": " +
-          ($r.advisory.title // "" | gsub("\\s+"; " ") | .[0:140])
+          # GHSA / CVE prefix is conditional — bundler-audit currently
+          # stores the bare hash ("h47h-mwp9-c6q6") and bare CVE id
+          # ("2024-47889"), but defend against future format changes.
+          ($r.advisory.ghsa // "no-GHSA"
+           | if startswith("GHSA-") then . else "GHSA-\(.)" end) as $ghsa
+          | ($r.advisory.cve // "no-CVE"
+             | if (. == "no-CVE" or startswith("CVE-")) then . else "CVE-\(.)" end) as $cve
+          | "  \($hit): \($ghsa) [\($r.advisory.criticality // "unknown")] \($cve): " +
+            ($r.advisory.title // "" | gsub("\\s+"; " ") | .[0:140])
         end
     ' 2>/dev/null | sort -u
 }

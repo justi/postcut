@@ -46,6 +46,21 @@ check_not() {
   fi
 }
 
+assert_eq() {
+  local desc="$1"
+  local expected="$2"
+  local actual="$3"
+  ran=$((ran + 1))
+  if [ "$expected" = "$actual" ]; then
+    printf 'ok    %-55s\n' "$desc"
+  else
+    printf 'FAIL  %-55s\n' "$desc"
+    printf '       expected: %q\n' "$expected"
+    printf '       actual:   %q\n' "$actual"
+    failed=$((failed + 1))
+  fi
+}
+
 # --- Rails-style "## Rails X.Y.Z (date) ##" header ---
 
 rails_changelog="## Rails 8.1.3 (March 24, 2026) ##
@@ -126,6 +141,29 @@ check_not "empty input → empty output"  ":"  "$out"
 
 out=$(parse_changelog_content "$kac" "9.9.9")
 check_not "non-matching version → empty"  ":"  "$out"
+
+# --- Byte-identical equivalence with old bash parser ---
+# The old parser stripped ONLY the leading bullet marker, did NOT collapse
+# internal whitespace, did NOT trim trailing whitespace, then truncated to
+# 140 chars. These golden assertions catch any future drift.
+
+ws_test="## 1.0.0 (2024-01-01)
+
+- bullet  with    multiple   spaces
+- trailing spaces preserved   "
+
+out=$(parse_changelog_content "$ws_test" "1.0.0")
+expected="  1.0.0: bullet  with    multiple   spaces; trailing spaces preserved   "
+assert_eq "byte-identical: internal whitespace preserved" "$expected" "$out"
+
+trunc_test="## 2.0.0 (2024-01-01)
+
+- $(printf 'x%.0s' $(seq 1 200))"
+
+out=$(parse_changelog_content "$trunc_test" "2.0.0")
+trunc_part=$(printf 'x%.0s' $(seq 1 140))
+expected="  2.0.0: $trunc_part"
+assert_eq "byte-identical: truncates to exactly 140 chars" "$expected" "$out"
 
 echo
 if [ "$failed" -eq 0 ]; then

@@ -152,14 +152,18 @@ parse_changelog_content() {
     current != "" && (current in target) && /^[[:space:]]*[*\-+][[:space:]]+/ {
       if (count[current] >= 3) next
       bullet = $0
+      # Strip ONLY the leading bullet marker. Do not collapse internal
+      # whitespace, do not trim trailing — match the old bash parser
+      # behavior so output stays byte-identical to pre-refactor runs.
       sub(/^[[:space:]]*[*\-+][[:space:]]+/, "", bullet)
-      gsub(/[[:space:]]+/, " ", bullet)
-      sub(/^[[:space:]]+/, "", bullet)
-      sub(/[[:space:]]+$/, "", bullet)
       # Skip trivial "No changes." entries — common in Rails monorepo
-      # sub-gems. If we kept them, the router would treat the section as
-      # "got something" and skip the HTTP fallback that has actual CVEs.
+      # sub-gems. Without this, ruby_local_notes (when it ships) would
+      # see the section as "got something" and prevent fall-through to
+      # the richer HTTP source. Trimmed comparison only on this one
+      # check; bullet itself is kept unmodified.
       lc = tolower(bullet)
+      sub(/^[[:space:]]+/, "", lc)
+      sub(/[[:space:]]+$/, "", lc)
       if (lc == "no changes." || lc == "no changes" || lc == "nothing." || lc == "nothing") next
       if (length(bullet) > 140) bullet = substr(bullet, 1, 140)
       if (buf[current] == "") buf[current] = bullet
