@@ -75,24 +75,19 @@ fetch_github_release_notes() {
   '
 }
 
-# Fallback: fetch raw CHANGELOG.md (or similar) and extract bullets per version.
-# Args: <owner/repo> <versions_csv>
-# Stdout: same format as fetch_github_release_notes ("  ver: bullet1; bullet2; bullet3")
-fetch_changelog_md() {
-  local repo="$1"
+# Parse CHANGELOG-style content and emit one line per matched version with
+# up to 3 leading bullets joined by "; ". Shared by HTTP and local-toolchain
+# paths; pure string transform, no I/O.
+#
+# Args: <content> <versions_csv> [prefix]
+# Prefix is injected before the version label — pass "[sub-gem] " to scope
+# output for monorepo sub-gems.
+_parse_changelog_content() {
+  local content="$1"
   local versions_csv="$2"
-  [ -z "$repo" ] && return 0
-  [ -z "$versions_csv" ] && return 0
-
-  local content="" branch file url
-  for branch in master main; do
-    for file in CHANGELOG.md CHANGES.md History.md History.markdown NEWS.md; do
-      url="https://raw.githubusercontent.com/${repo}/${branch}/${file}"
-      content=$(curl -fsSL --max-time 10 "$url" 2>/dev/null) && break 2
-      content=""
-    done
-  done
+  local prefix="${3:-}"
   [ -z "$content" ] && return 0
+  [ -z "$versions_csv" ] && return 0
 
   local -a vs buf count
   IFS=',' read -r -a vs <<< "$versions_csv"
@@ -103,10 +98,14 @@ fetch_changelog_md() {
     count[$i]=0
   done
 
+  # Header forms accepted (with optional leading text + optional v/[ prefix):
+  #   "## 7.2.0", "## v7.2.0", "## [7.2.0]"
+  #   "## Rails 8.1.3 ##"  (Rails sub-gem CHANGELOG style)
+  #   "## 1.2.3 (2024-01-01)"
   local current_idx=-1 line bullet v idx
   while IFS= read -r line; do
-    if [[ "$line" =~ ^#+[[:space:]]+v?\[?([0-9]+(\.[0-9]+)+[a-zA-Z0-9.]*) ]]; then
-      v="${BASH_REMATCH[1]}"
+    if [[ "$line" =~ ^#+[[:space:]]+(.*[[:space:]])?v?\[?([0-9]+(\.[0-9]+)+[a-zA-Z0-9.]*) ]]; then
+      v="${BASH_REMATCH[2]}"
       current_idx=-1
       for ((idx = 0; idx < n; idx++)); do
         if [ "${vs[$idx]}" = "$v" ]; then
@@ -132,9 +131,31 @@ fetch_changelog_md() {
 
   for ((idx = 0; idx < n; idx++)); do
     if [ -n "${buf[$idx]}" ]; then
-      printf '  %s: %s\n' "${vs[$idx]}" "${buf[$idx]}"
+      printf '  %s%s: %s\n' "$prefix" "${vs[$idx]}" "${buf[$idx]}"
     fi
   done
+}
+
+# Fallback: fetch raw CHANGELOG.md (or similar) and extract bullets per version.
+# Args: <owner/repo> <versions_csv>
+# Stdout: same format as fetch_github_release_notes ("  ver: bullet1; bullet2; bullet3")
+fetch_changelog_md() {
+  local repo="$1"
+  local versions_csv="$2"
+  [ -z "$repo" ] && return 0
+  [ -z "$versions_csv" ] && return 0
+
+  local content="" branch file url
+  for branch in master main; do
+    for file in CHANGELOG.md CHANGES.md History.md History.markdown NEWS.md; do
+      url="https://raw.githubusercontent.com/${repo}/${branch}/${file}"
+      content=$(curl -fsSL --max-time 10 "$url" 2>/dev/null) && break 2
+      content=""
+    done
+  done
+  [ -z "$content" ] && return 0
+
+  _parse_changelog_content "$content" "$versions_csv"
 }
 
 # Query GitHub Advisories for an ecosystem package and emit one line per
