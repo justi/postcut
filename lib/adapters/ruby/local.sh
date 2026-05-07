@@ -6,6 +6,38 @@
 # Additional tools (e.g. bundler-audit) are checked per function and
 # gracefully skipped if absent.
 
+# ruby_local_metadata <pkg>
+# Stdout: best-effort source URI (github / homepage), or empty.
+# Reads from the locally-installed gem's gemspec — no HTTP.
+ruby_local_metadata() {
+  local pkg="$1"
+  [ -z "$pkg" ] && return 0
+
+  # Try metadata block first (has source_code_uri for most modern gems).
+  local meta=""
+  meta=$(gem specification "$pkg" metadata 2>/dev/null) || meta=""
+
+  local uri=""
+  if [ -n "$meta" ]; then
+    uri=$(printf '%s' "$meta" \
+      | awk '/^source_code_uri:/ { sub(/^source_code_uri:[[:space:]]*/, ""); print; exit }')
+  fi
+
+  # Fall back to homepage field if metadata had no source_code_uri.
+  # Format: "--- https://example.com"
+  if [ -z "$uri" ]; then
+    local hp=""
+    hp=$(gem specification "$pkg" homepage 2>/dev/null) || hp=""
+    if [ -n "$hp" ]; then
+      uri=$(printf '%s' "$hp" \
+        | awk '/^---[[:space:]]/ { sub(/^---[[:space:]]+/, ""); print; exit }')
+    fi
+  fi
+
+  [ -z "$uri" ] && return 0
+  printf '%s\n' "$uri"
+}
+
 # ruby_local_advisories <pkg> <versions_csv>
 # Stdout: "  X.Y.Z: GHSA-XXX [severity] CVE-XXXX-NNNN: summary"
 # Pulls advisories from the local ruby-advisory-db via bundler-audit.
@@ -57,6 +89,22 @@ ruby_local_advisories() {
             ($r.advisory.title // "" | gsub("\\s+"; " ") | .[0:140])
         end
     ' 2>/dev/null | sort -u
+}
+
+# ruby_http_metadata <pkg>
+# HTTP fallback for metadata. Calls rubygems gems-meta endpoint and
+# extracts the source URI in the same precedence the local path uses.
+ruby_http_metadata() {
+  local pkg="$1"
+  [ -z "$pkg" ] && return 0
+
+  local raw=""
+  raw=$(curl -fsSL --max-time 10 "https://rubygems.org/api/v1/gems/${pkg}.json" 2>/dev/null) || raw=""
+  [ -z "$raw" ] && return 0
+
+  printf '%s' "$raw" | jq -r '
+    .source_code_uri // .metadata.source_code_uri // .homepage_uri // ""
+  ' 2>/dev/null
 }
 
 # ruby_http_advisories <pkg> <versions_csv>
