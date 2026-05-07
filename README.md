@@ -41,6 +41,50 @@ postcut --all                    # include transitive deps
 postcut --since 2025-06-01       # override cutoff
 ```
 
+## Modes — local vs HTTP-only
+
+postcut auto-detects whatever toolchain is in `PATH` and uses it for
+the bits it can do offline. There's no flag — it just picks up speed
+when the tools are around.
+
+**HTTP-only (default, zero deps):**
+
+```bash
+# Nothing extra installed beyond bash/curl/jq.
+postcut --model claude-opus-4-7 --path ./my-rails-app
+```
+
+Every per-gem fact (versions, release notes, advisories) goes over
+the network. ~30–90s on a typical Rails app. Set `GITHUB_TOKEN` to
+lift the GitHub rate limit.
+
+**Local mode (faster, when Ruby toolchain is present):**
+
+```bash
+gem install bundler-audit
+bundle-audit update                    # one-time, syncs the DB
+export GITHUB_TOKEN=$(gh auth token)   # still needed for version lists
+postcut --model claude-opus-4-7 --path ./my-rails-app
+```
+
+What goes local automatically when detected:
+
+- **CVE/security** → `bundler-audit check --no-update --format=json`
+  (reads `~/.local/share/ruby-advisory-db` synced offline).
+  Falls through to GitHub Advisories API if the local DB has nothing
+  fresh for a given gem.
+- **Gem metadata** (source URI for the gem's repo) → `gem specification <pkg>`
+  instead of a `rubygems.org` round-trip.
+
+What still goes over HTTP, always:
+
+- The full version list with publication dates (registry-only data —
+  your local install only has one version of any gem).
+- Release notes / CHANGELOG content (sub-gem CHANGELOGs in monorepos
+  like Rails don't include cross-cutting fixes from sibling sub-gems,
+  so we keep `/releases` + raw CHANGELOG fetch as the canonical
+  source).
+
 ## Status
 
 `v0.2-dev`. Ruby only. No cache yet (~30–90s on a typical Rails app).
