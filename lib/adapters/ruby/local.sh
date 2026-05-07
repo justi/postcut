@@ -130,8 +130,14 @@ _ruby_local_notes_one() {
   local versions_csv="$2"
   local prefix="$3"
 
+  # POSTCUT_GEMDIR override exists for tests — production paths read
+  # `gem env gemdir`. Empty override falls through to the live lookup.
   local gemdir
-  gemdir=$(gem env gemdir 2>/dev/null) || return 0
+  if [ -n "${POSTCUT_GEMDIR:-}" ]; then
+    gemdir="$POSTCUT_GEMDIR"
+  else
+    gemdir=$(gem env gemdir 2>/dev/null) || return 0
+  fi
   [ -z "$gemdir" ] && return 0
 
   # `[0-9]*` after the dash — anchors on the version digit so we don't
@@ -144,6 +150,16 @@ _ruby_local_notes_one() {
 
   local installed_v
   installed_v="${pkg_dir##*/${pkg}-}"
+
+  # Reject prereleases. `sort -V` orders `1.0.0 < 1.0.0-beta` and
+  # `7.2.0 < 7.2.0.rc1`, opposite to Ruby's Gem::Version semantics —
+  # without this guard a prerelease install would falsely satisfy gating
+  # against a final-release csv and we'd return its (incomplete) CHANGELOG
+  # instead of falling through to HTTP.
+  if [[ "$installed_v" =~ [^0-9.] ]]; then
+    return 0
+  fi
+
   local max_csv_v
   max_csv_v=$(printf '%s\n' "${versions_csv//,/$'\n'}" | sort -V | tail -1)
   local highest
@@ -166,10 +182,11 @@ _ruby_local_notes_one() {
   _parse_changelog_content "$content" "$versions_csv" "$prefix"
 }
 
-# ruby_http_notes <pkg> <versions_csv> [gh_repo_hint]
-# HTTP fallback for notes. If gh_repo_hint is provided (e.g., already
-# resolved by the caller), uses it directly — otherwise resolves the repo
-# via ruby_http_metadata. Tries GitHub Releases first; falls back to raw
+# ruby_http_notes <pkg> <versions_csv> <gh_repo>
+# HTTP fallback for notes. Caller (fetch_ruby_delta) is expected to have
+# already resolved gh_repo via `dispatch metadata` — empty gh_repo here
+# means "metadata lookup failed", so re-running it would just repeat a
+# call we already made. Tries GitHub Releases first, falls back to raw
 # CHANGELOG.md.
 ruby_http_notes() {
   local pkg="$1"
@@ -177,12 +194,6 @@ ruby_http_notes() {
   local gh_repo="${3:-}"
   [ -z "$pkg" ] && return 0
   [ -z "$versions_csv" ] && return 0
-
-  if [ -z "$gh_repo" ]; then
-    local meta_uri
-    meta_uri=$(ruby_http_metadata "$pkg") || meta_uri=""
-    gh_repo=$(parse_github_repo_from_url "$meta_uri")
-  fi
   [ -z "$gh_repo" ] && return 0
 
   local notes
