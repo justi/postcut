@@ -1,0 +1,22 @@
+PATH
+  remote: .
+  specs:
+    sample (0.1.0)
+      addressable (~> 2.8)
+      json (>= 2.0)
+      rake
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    addressable (2.8.8)
+    json (2.18.0)
+    minitest (6.0.1)
+    rake (13.3.1)
+    rspec (3.13.7)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  sample!
