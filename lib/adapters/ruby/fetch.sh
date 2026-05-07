@@ -79,5 +79,10 @@ fetch_ruby_delta() {
     fi
   fi
 
-  fetch_github_advisories "rubygems" "$name" "$post_versions"
+  # Advisories: prefer local (bundler-audit + ruby-advisory-db) when the
+  # toolchain is present; fall back to GitHub Advisories API otherwise.
+  # Notes/metadata stay HTTP-only for now — local CHANGELOGs in Rails
+  # monorepo sub-gems regress output (CVE listings live in sibling
+  # sub-gems' files). Revisit when we have per-monorepo strategy.
+  dispatch advisories ruby "$name" "$post_versions"
 }

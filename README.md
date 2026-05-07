@@ -41,6 +41,41 @@ postcut --all                    # include transitive deps
 postcut --since 2025-06-01       # override cutoff
 ```
 
+## Modes — local vs HTTP-only
+
+postcut auto-detects whatever toolchain is in `PATH`. No flag — it
+just gets faster (and works offline-er) when the tools are around.
+
+**HTTP-only (default, zero deps):**
+
+```bash
+postcut --model claude-opus-4-7 --path ./my-rails-app
+```
+
+Set `GITHUB_TOKEN` to lift the GitHub rate limit. Everything goes
+over the network.
+
+**Local mode (faster, when the Ruby toolchain is around):**
+
+```bash
+gem install bundler-audit
+bundle-audit update                    # one-time, syncs the DB
+postcut --model claude-opus-4-7 --path ./my-rails-app
+```
+
+What goes local automatically when detected:
+
+- **CVE/security** → `bundler-audit check --no-update --format=json`
+  (reads `~/.local/share/ruby-advisory-db` synced offline). Falls
+  through to GitHub Advisories API if the local DB has no fresh
+  match for a given gem.
+
+What still goes over HTTP, always:
+
+- Version lists with publication dates (registry-only data — your
+  local install only has one version of any gem).
+- Release notes / CHANGELOG content.
+
 ## Status
 
 `v0.2-dev`. Ruby only. No cache yet (~30–90s on a typical Rails app).
