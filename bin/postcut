@@ -6,6 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # shellcheck source=../lib/core/cutoff.sh
 source "$ROOT/lib/core/cutoff.sh"
+# shellcheck source=../lib/core/github.sh
+source "$ROOT/lib/core/github.sh"
 # shellcheck source=../lib/adapters/ruby/parse.sh
 source "$ROOT/lib/adapters/ruby/parse.sh"
 # shellcheck source=../lib/adapters/ruby/fetch.sh
@@ -58,14 +60,18 @@ if [ ! -f "$lockfile" ]; then
   exit 1
 fi
 
-deltas=$(parse_gemfile_lock "$lockfile" | while read -r name version; do
-  fetch_ruby_delta "$name" "$version" "$cutoff"
+deltas=$(parse_gemfile_lock "$lockfile" | while read -r name _; do
+  block=$(fetch_ruby_delta "$name" "$cutoff")
+  [ -n "$block" ] && printf '%s\n\n' "$block"
 done)
 
 echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label):"
+if [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "(set GITHUB_TOKEN to lift release-notes rate limit from 60/h → 5000/h)"
+fi
 echo
 if [ -z "$deltas" ]; then
   echo "(no post-cutoff updates for any gem in $lockfile)"
 else
-  printf '%s\n' "$deltas"
+  printf '%s' "$deltas"
 fi
