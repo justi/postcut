@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Smoke tests for ruby_local_notes. Requires `gem` in PATH and the rails
-# meta-gem installed (with at least one of its sub-gems — usually all
-# install together). Skips otherwise.
+# Tests for ruby_local_notes against a controlled fixture gemdir.
+# Uses POSTCUT_GEMDIR override so coverage is deterministic regardless
+# of what's installed on the host (or whether `gem` is in PATH at all).
 
 set -uo pipefail
 
@@ -10,47 +10,38 @@ source "$ROOT/lib/core/router.sh"
 source "$ROOT/lib/core/github.sh"
 source "$ROOT/lib/adapters/ruby/local.sh"
 
-if ! command -v gem >/dev/null 2>&1; then
-  echo "SKIP  no \`gem\` in PATH (test requires Ruby toolchain)"
-  exit 0
-fi
-
-GEMDIR=$(gem env gemdir 2>/dev/null) || GEMDIR=""
-if [ -z "$GEMDIR" ]; then
-  echo "SKIP  gem env gemdir empty"
-  exit 0
-fi
-
-# Pick the highest installed activerecord version as the test target.
-AR_DIR=$(ls -d "${GEMDIR}/gems/activerecord-"[0-9]*/ 2>/dev/null | sort -V | tail -1)
-AR_DIR="${AR_DIR%/}"
-if [ -z "$AR_DIR" ] || [ ! -f "${AR_DIR}/CHANGELOG.md" ]; then
-  echo "SKIP  no activerecord with CHANGELOG.md installed"
-  exit 0
-fi
-AR_VERSION="${AR_DIR##*/activerecord-}"
-
-# Pick the highest installed rails meta-gem version (may differ from AR if
-# user has rails partially installed); skip the rails-specific assertions
-# if there's no rails meta directory.
-RAILS_DIR=$(ls -d "${GEMDIR}/gems/rails-"[0-9]*/ 2>/dev/null | sort -V | tail -1)
-RAILS_DIR="${RAILS_DIR%/}"
-RAILS_VERSION=""
-[ -n "$RAILS_DIR" ] && RAILS_VERSION="${RAILS_DIR##*/rails-}"
+export POSTCUT_GEMDIR="$ROOT/tests/fixtures/local-gemdir"
 
 failed=0
 ran=0
 
-check_nonempty() {
+check_substr() {
   local desc="$1"
-  local out="$2"
+  local needle="$2"
+  local haystack="$3"
   ran=$((ran + 1))
-  if [ -n "$out" ]; then
-    printf 'ok    %-55s\n' "$desc"
+  if printf '%s' "$haystack" | grep -qF "$needle"; then
+    printf 'ok    %-60s\n' "$desc"
   else
-    printf 'FAIL  %-55s\n' "$desc"
-    printf '       expected non-empty output\n'
+    printf 'FAIL  %-60s\n' "$desc"
+    printf '       expected substring: %s\n' "$needle"
+    printf '       actual: %s\n' "$haystack"
     failed=$((failed + 1))
+  fi
+}
+
+check_no_substr() {
+  local desc="$1"
+  local needle="$2"
+  local haystack="$3"
+  ran=$((ran + 1))
+  if printf '%s' "$haystack" | grep -qF "$needle"; then
+    printf 'FAIL  %-60s\n' "$desc"
+    printf '       did NOT expect: %s\n' "$needle"
+    printf '       actual: %s\n' "$haystack"
+    failed=$((failed + 1))
+  else
+    printf 'ok    %-60s\n' "$desc"
   fi
 }
 
@@ -59,65 +50,91 @@ check_empty() {
   local out="$2"
   ran=$((ran + 1))
   if [ -z "$out" ]; then
-    printf 'ok    %-55s\n' "$desc"
+    printf 'ok    %-60s\n' "$desc"
   else
-    printf 'FAIL  %-55s\n' "$desc"
+    printf 'FAIL  %-60s\n' "$desc"
     printf '       expected empty, got: %s\n' "$out"
     failed=$((failed + 1))
   fi
 }
 
-check_substr() {
+check_nonempty() {
   local desc="$1"
-  local needle="$2"
-  local haystack="$3"
+  local out="$2"
   ran=$((ran + 1))
-  if printf '%s' "$haystack" | grep -qF "$needle"; then
-    printf 'ok    %-55s\n' "$desc"
+  if [ -n "$out" ]; then
+    printf 'ok    %-60s\n' "$desc"
   else
-    printf 'FAIL  %-55s\n' "$desc"
-    printf '       expected substring: %s\n' "$needle"
-    printf '       actual: %s\n' "$haystack"
+    printf 'FAIL  %-60s\n' "$desc"
+    printf '       expected non-empty output\n'
     failed=$((failed + 1))
   fi
 }
 
-# 1. Direct gem (activerecord) — installed version should produce notes.
-out=$(ruby_local_notes activerecord "$AR_VERSION")
-check_nonempty "activerecord notes for installed version" "$out"
-check_substr  "activerecord output starts with version label" "  ${AR_VERSION}:" "$out"
+# ---- 1. Direct gem with simple "## 2.0.0" header ----
+out=$(ruby_local_notes regular 2.0.0)
+check_nonempty "regular gem: emits notes for installed version" "$out"
+check_substr  "regular gem: bullet present"                     "First major bump" "$out"
+check_substr  "regular gem: version label '  2.0.0:'"           "  2.0.0:" "$out"
 
-# 2. Rails meta-gem — must emit lines with [activerecord] sub-gem prefix
-#    when the installed sub-gem version matches the requested version.
-if [ -n "$RAILS_VERSION" ]; then
-  # Use AR_VERSION for the csv since that's what's actually parseable;
-  # rails meta loops over sub-gems with the same csv, so [activerecord]
-  # lines should appear iff activerecord-AR_VERSION's CHANGELOG mentions it.
-  out=$(ruby_local_notes rails "$AR_VERSION")
-  check_substr "rails meta emits [activerecord] prefix" "[activerecord]" "$out"
-else
-  printf 'SKIP  rails meta-gem not installed — skipping meta tests\n'
-fi
+# ---- 2. Rails sub-gem with "## Rails X.Y.Z ##" header ----
+out=$(ruby_local_notes activerecord 7.2.1)
+check_nonempty "activerecord: notes for 7.2.1"                  "$out"
+check_substr  "activerecord: 7.2.1 bullet content"              "Restore previous instrumenter" "$out"
+check_substr  "activerecord: emits 7.2.1 label"                 "  7.2.1:" "$out"
 
-# 3. Gating: csv contains a version higher than installed → empty output.
-#    Pick a version that's certainly higher (bump major).
-INSTALLED_MAJOR="${AR_VERSION%%.*}"
-FUTURE_MAJOR=$((INSTALLED_MAJOR + 10))
-FUTURE_VERSION="${FUTURE_MAJOR}.0.0"
-out=$(ruby_local_notes activerecord "$FUTURE_VERSION")
-check_empty "gating: csv max > installed → empty (HTTP fallback)" "$out"
+# ---- 3. Rails meta-gem stitching ----
+out=$(ruby_local_notes rails 7.2.1)
+check_substr "rails meta: [activerecord] prefix"                "[activerecord] 7.2.1:" "$out"
+check_substr "rails meta: [activesupport] prefix"               "[activesupport] 7.2.1:" "$out"
+check_substr "rails meta: [actionpack] prefix"                  "[actionpack] 7.2.1:" "$out"
+check_substr "rails meta: activerecord bullet content"          "Restore previous instrumenter" "$out"
 
-# 4. Empty pkg → empty output (defensive).
+# ---- 4. Gating: csv max > installed → empty (HTTP fallback) ----
+out=$(ruby_local_notes regular 99.0.0)
+check_empty "gating: future version → empty" "$out"
+
+# ---- 5. MED#1 regression: false-positive "## Note: 1.2.3 is deprecated" ----
+# The "Note:" header must NOT match — bullets under it ("should not show")
+# must be absent, while the real "## 1.2.3" section's bullets must appear.
+out=$(ruby_local_notes falsepositive 1.2.3)
+check_substr    "falsepositive: real 1.2.3 bullets emitted"     "This is the real 1.2.3 release" "$out"
+check_no_substr "falsepositive: 'Note:' header bullets skipped" "should not show as a release note" "$out"
+
+# ---- 6. MED#3 regression: prerelease guard ----
+# Installed = prerelease-7.2.0.rc1 (only prerelease available). Querying
+# for final 7.2.0 must return empty so the dispatcher falls through to
+# HTTP rather than returning the RC's CHANGELOG.
+out=$(ruby_local_notes prerelease 7.2.0)
+check_empty "prerelease: final-version query → empty (HTTP fallback)" "$out"
+out=$(ruby_local_notes prerelease 7.2.0.rc1)
+check_empty "prerelease: even RC query → empty (guard rejects all)"   "$out"
+
+# ---- 7. Defensive cases ----
 out=$(ruby_local_notes "" "1.0.0")
-check_empty "empty pkg returns empty" "$out"
+check_empty "empty pkg → empty" "$out"
 
-# 5. Empty csv → empty output (defensive).
-out=$(ruby_local_notes activerecord "")
-check_empty "empty csv returns empty" "$out"
+out=$(ruby_local_notes regular "")
+check_empty "empty csv → empty" "$out"
 
-# 6. Unknown gem → empty (no install dir).
-out=$(ruby_local_notes this-gem-definitely-does-not-exist-xyz "1.0.0")
-check_empty "unknown gem returns empty" "$out"
+out=$(ruby_local_notes nonexistent-gem-xyz "1.0.0")
+check_empty "unknown gem → empty (no install dir)" "$out"
+
+# ---- 8. Sibling-gem glob safety: pkg='rails' must not match 'rails-html-sanitizer' ----
+# Fixture doesn't include the sibling gem so this is a passive guard;
+# add a fake sibling and re-check that ruby_local_notes still routes to
+# the meta-gem stitching path (sub-gems exist) rather than picking up
+# the sibling.
+mkdir -p "$POSTCUT_GEMDIR/gems/rails-html-sanitizer-1.7.0"
+echo "## 1.7.0" > "$POSTCUT_GEMDIR/gems/rails-html-sanitizer-1.7.0/CHANGELOG.md"
+echo "*   sanitizer bullet" >> "$POSTCUT_GEMDIR/gems/rails-html-sanitizer-1.7.0/CHANGELOG.md"
+
+out=$(ruby_local_notes rails 7.2.1)
+check_no_substr "glob safety: sibling 'rails-html-sanitizer' not picked" "sanitizer bullet" "$out"
+check_substr   "glob safety: meta-gem stitching still works"            "[activerecord]"    "$out"
+
+# Cleanup the sibling
+rm -rf "$POSTCUT_GEMDIR/gems/rails-html-sanitizer-1.7.0"
 
 echo
 if [ "$failed" -eq 0 ]; then
