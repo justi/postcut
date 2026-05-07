@@ -94,47 +94,87 @@ fetch_changelog_md() {
   done
   [ -z "$content" ] && return 0
 
-  local -a vs buf count
-  IFS=',' read -r -a vs <<< "$versions_csv"
-  local n="${#vs[@]}"
-  local i
-  for ((i = 0; i < n; i++)); do
-    buf[$i]=""
-    count[$i]=0
-  done
+  parse_changelog_content "$content" "$versions_csv"
+}
 
-  local current_idx=-1 line bullet v idx
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^#+[[:space:]]+v?\[?([0-9]+(\.[0-9]+)+[a-zA-Z0-9.]*) ]]; then
-      v="${BASH_REMATCH[1]}"
-      current_idx=-1
-      for ((idx = 0; idx < n; idx++)); do
-        if [ "${vs[$idx]}" = "$v" ]; then
-          current_idx=$idx
-          break
-        fi
-      done
-      continue
-    fi
-    [ "$current_idx" -lt 0 ] && continue
-    [ "${count[$current_idx]}" -ge 3 ] && continue
-    if [[ "$line" =~ ^[[:space:]]*[-*+][[:space:]]+(.*) ]]; then
-      bullet="${BASH_REMATCH[1]}"
-      bullet="${bullet:0:140}"
-      if [ -n "${buf[$current_idx]}" ]; then
-        buf[$current_idx]+="; $bullet"
-      else
-        buf[$current_idx]="$bullet"
-      fi
-      count[$current_idx]=$(( count[current_idx] + 1 ))
-    fi
-  done <<< "$content"
+# Shared CHANGELOG body parser — used by fetch_changelog_md (HTTP) and by
+# adapters that read a CHANGELOG file locally (e.g. ruby_local_notes).
+# Args:
+#   $1 = full markdown content
+#   $2 = comma-separated versions to look up
+# Stdout: "  <ver>: <bullet1>; <bullet2>; <bullet3>" per matched version.
+#
+# Header forms accepted (handled in awk):
+#   ## 1.2.3
+#   ## v1.2.3
+#   ## [1.2.3]
+#   ## [1.2.3] - 2024-01-15
+#   ## 1.2.3 (2024-01-15)
+#   ## Rails 8.1.3 (March 24, 2026) ##
+#   ### v1.2.3
+#   # 1.2.3
+# Sub-headers like "### Active Record" inside a version section don't reset
+# the current section — only headers that contain a version number do.
+parse_changelog_content() {
+  local content="$1"
+  local versions_csv="$2"
+  [ -z "$content" ] && return 0
+  [ -z "$versions_csv" ] && return 0
 
-  for ((idx = 0; idx < n; idx++)); do
-    if [ -n "${buf[$idx]}" ]; then
-      printf '  %s: %s\n' "${vs[$idx]}" "${buf[$idx]}"
-    fi
-  done
+  printf '%s\n' "$content" | awk -v versions_csv="$versions_csv" '
+    BEGIN {
+      n = split(versions_csv, vs, ",")
+      for (i = 1; i <= n; i++) {
+        target[vs[i]] = 1
+        buf[vs[i]] = ""
+        count[vs[i]] = 0
+      }
+      current = ""
+    }
+
+    # Header line — try to extract a version. If it looks like a header but
+    # no version is found, leave `current` alone (sub-header inside a section).
+    /^#+[[:space:]]+/ {
+      rest = $0
+      sub(/^#+[[:space:]]+/, "", rest)
+      # Strip optional leading words (e.g. "Rails ", "Sprockets ", etc.)
+      while (match(rest, /^[A-Za-z][A-Za-z_-]*[[:space:]]+/)) {
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+      sub(/^v/, "", rest)
+      sub(/^\[/, "", rest)
+      if (match(rest, /^[0-9]+(\.[0-9]+)+[a-zA-Z0-9.]*/)) {
+        current = substr(rest, RSTART, RLENGTH)
+      }
+      next
+    }
+
+    current != "" && (current in target) && /^[[:space:]]*[*\-+][[:space:]]+/ {
+      if (count[current] >= 3) next
+      bullet = $0
+      sub(/^[[:space:]]*[*\-+][[:space:]]+/, "", bullet)
+      gsub(/[[:space:]]+/, " ", bullet)
+      sub(/^[[:space:]]+/, "", bullet)
+      sub(/[[:space:]]+$/, "", bullet)
+      # Skip trivial "No changes." entries — common in Rails monorepo
+      # sub-gems. If we kept them, the router would treat the section as
+      # "got something" and skip the HTTP fallback that has actual CVEs.
+      lc = tolower(bullet)
+      if (lc == "no changes." || lc == "no changes" || lc == "nothing." || lc == "nothing") next
+      if (length(bullet) > 140) bullet = substr(bullet, 1, 140)
+      if (buf[current] == "") buf[current] = bullet
+      else buf[current] = buf[current] "; " bullet
+      count[current]++
+    }
+
+    END {
+      n = split(versions_csv, ordered, ",")
+      for (i = 1; i <= n; i++) {
+        v = ordered[i]
+        if (count[v] > 0) print "  " v ": " buf[v]
+      }
+    }
+  '
 }
 
 # Query GitHub Advisories for an ecosystem package and emit one line per
