@@ -73,7 +73,28 @@ fi
 
 lockfile="$path/Gemfile.lock"
 if [ ! -f "$lockfile" ]; then
-  echo "postcut: no Gemfile.lock in $path" >&2
+  detected=""
+  if [ -f "$path/package.json" ] || [ -f "$path/package-lock.json" ] \
+     || [ -f "$path/yarn.lock" ] || [ -f "$path/pnpm-lock.yaml" ]; then
+    detected="Node.js / npm"
+  elif [ -f "$path/pyproject.toml" ] || [ -f "$path/poetry.lock" ] \
+       || [ -f "$path/Pipfile.lock" ] || [ -f "$path/requirements.txt" ]; then
+    detected="Python"
+  elif [ -f "$path/Cargo.toml" ] || [ -f "$path/Cargo.lock" ]; then
+    detected="Rust / cargo"
+  elif [ -f "$path/go.mod" ] || [ -f "$path/go.sum" ]; then
+    detected="Go"
+  elif [ -f "$path/composer.json" ] || [ -f "$path/composer.lock" ]; then
+    detected="PHP / composer"
+  fi
+
+  if [ -n "$detected" ]; then
+    echo "postcut: $detected project detected in $path." >&2
+    echo "v0.2 supports only Ruby (Gemfile.lock); $detected adapter is on the v0.3 roadmap." >&2
+  else
+    echo "postcut: no Gemfile.lock in $path." >&2
+    echo "v0.2 supports only Ruby projects. Multi-language adapters (npm, pypi, cargo, go) come in v0.3+." >&2
+  fi
   exit 1
 fi
 
