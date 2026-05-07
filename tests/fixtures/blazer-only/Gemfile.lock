@@ -1,0 +1,14 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    blazer (3.1.0)
+    pghero (3.7.0)
+    searchkick (5.5.0)
+    groupdate (6.7.0)
+    activeadmin (3.4.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  blazer

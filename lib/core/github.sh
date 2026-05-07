@@ -64,3 +64,65 @@ fetch_github_release_notes() {
     | .[]
   '
 }
+
+# Fallback: fetch raw CHANGELOG.md (or similar) and extract bullets per version.
+# Args: <owner/repo> <versions_csv>
+# Stdout: same format as fetch_github_release_notes ("  ver: bullet1; bullet2; bullet3")
+fetch_changelog_md() {
+  local repo="$1"
+  local versions_csv="$2"
+  [ -z "$repo" ] && return 0
+  [ -z "$versions_csv" ] && return 0
+
+  local content="" branch file url
+  for branch in master main; do
+    for file in CHANGELOG.md CHANGES.md History.md History.markdown NEWS.md; do
+      url="https://raw.githubusercontent.com/${repo}/${branch}/${file}"
+      content=$(curl -fsSL --max-time 10 "$url" 2>/dev/null) && break 2
+      content=""
+    done
+  done
+  [ -z "$content" ] && return 0
+
+  local -a vs buf count
+  IFS=',' read -r -a vs <<< "$versions_csv"
+  local n="${#vs[@]}"
+  local i
+  for ((i = 0; i < n; i++)); do
+    buf[$i]=""
+    count[$i]=0
+  done
+
+  local current_idx=-1 line bullet v idx
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^#+[[:space:]]+v?\[?([0-9]+(\.[0-9]+)+[a-zA-Z0-9.]*) ]]; then
+      v="${BASH_REMATCH[1]}"
+      current_idx=-1
+      for ((idx = 0; idx < n; idx++)); do
+        if [ "${vs[$idx]}" = "$v" ]; then
+          current_idx=$idx
+          break
+        fi
+      done
+      continue
+    fi
+    [ "$current_idx" -lt 0 ] && continue
+    [ "${count[$current_idx]}" -ge 3 ] && continue
+    if [[ "$line" =~ ^[[:space:]]*[-*+][[:space:]]+(.*) ]]; then
+      bullet="${BASH_REMATCH[1]}"
+      bullet="${bullet:0:140}"
+      if [ -n "${buf[$current_idx]}" ]; then
+        buf[$current_idx]+="; $bullet"
+      else
+        buf[$current_idx]="$bullet"
+      fi
+      count[$current_idx]=$(( count[current_idx] + 1 ))
+    fi
+  done <<< "$content"
+
+  for ((idx = 0; idx < n; idx++)); do
+    if [ -n "${buf[$idx]}" ]; then
+      printf '  %s: %s\n' "${vs[$idx]}" "${buf[$idx]}"
+    fi
+  done
+}
