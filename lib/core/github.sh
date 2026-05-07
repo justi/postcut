@@ -126,3 +126,40 @@ fetch_changelog_md() {
     fi
   done
 }
+
+# Query GitHub Advisories for an ecosystem package and emit one line per
+# advisory whose first_patched_version matches one of the post-cutoff versions.
+#
+# Args: <ecosystem> <package_name> <versions_csv>
+# Stdout: "  X.Y.Z: GHSA-XXX [severity] CVE-XXXX-XXXX: summary"
+fetch_github_advisories() {
+  local ecosystem="$1"
+  local pkg="$2"
+  local versions_csv="$3"
+  [ -z "$pkg" ] && return 0
+  [ -z "$versions_csv" ] && return 0
+
+  local raw url
+  url="https://api.github.com/advisories?ecosystem=${ecosystem}&affects=${pkg}&per_page=100"
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    raw=$(curl -fsSL --max-time 10 -H "Authorization: Bearer ${GITHUB_TOKEN}" "$url" 2>/dev/null) || return 0
+  else
+    raw=$(curl -fsSL --max-time 10 "$url" 2>/dev/null) || return 0
+  fi
+
+  if ! printf '%s' "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  printf '%s' "$raw" | jq -r \
+    --arg vs "$versions_csv" \
+    --arg pkg "$pkg" '
+      ($vs | split(",")) as $versions
+      | .[]
+      | . as $adv
+      | (.vulnerabilities[]? | select(.package.name == $pkg) | .first_patched_version) as $fp
+      | select($fp != null and $fp != "")
+      | select($versions | any(. == $fp))
+      | "  \($fp): \($adv.ghsa_id) [\($adv.severity)] \($adv.cve_id // "no-CVE"): \(($adv.summary // "") | gsub("\\s+"; " ") | .[0:140])"
+    ' | sort -u
+}

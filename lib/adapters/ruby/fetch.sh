@@ -68,13 +68,16 @@ fetch_ruby_delta() {
 
   local gh_repo
   gh_repo=$(parse_github_repo_from_url "$repo_uri")
-  [ -z "$gh_repo" ] && return 0
 
-  local notes
-  notes=$(fetch_github_release_notes "$gh_repo" "$post_versions")
-  if [ -n "$notes" ]; then
-    printf '%s\n' "$notes"
-  else
-    fetch_changelog_md "$gh_repo" "$post_versions"
+  if [ -n "$gh_repo" ]; then
+    local notes
+    notes=$(fetch_github_release_notes "$gh_repo" "$post_versions")
+    if [ -n "$notes" ]; then
+      printf '%s\n' "$notes"
+    else
+      fetch_changelog_md "$gh_repo" "$post_versions"
+    fi
   fi
+
+  fetch_github_advisories "rubygems" "$name" "$post_versions"
 }
