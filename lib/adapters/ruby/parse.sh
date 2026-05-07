@@ -18,3 +18,23 @@ parse_gemfile_lock() {
     }
   ' "$file" | sort -u
 }
+
+# Parse Gemfile (DSL). Stdout: direct gem names, one per line.
+# Skips gems sourced from git/github/path (not on rubygems).
+parse_gemfile() {
+  local file="${1:-Gemfile}"
+  [ ! -f "$file" ] && return 0
+
+  awk '
+    # Strip inline comments
+    { sub(/#.*$/, "") }
+    # Match: gem "name" or gem '\''name'\''
+    /^[[:space:]]*gem[[:space:]]+["'\''][^"'\'']+["'\'']/ {
+      # Skip git/github/path sources (not on rubygems)
+      if ($0 ~ /(git:|github:|path:)/) next
+      match($0, /["'\''][^"'\'']+["'\'']/)
+      name = substr($0, RSTART + 1, RLENGTH - 2)
+      print name
+    }
+  ' "$file" | sort -u
+}

@@ -24,22 +24,27 @@ OPTIONS:
   --model NAME         Model id from models.dev (default: claude-opus-4-7).
   --since YYYY-MM-DD   Override cutoff date (skips models.dev lookup).
   --path DIR           Project directory (default: cwd).
+  --all                Include transitive deps (default: direct deps from
+                       Gemfile only — naturally dedupes Rails monorepo).
   -h, --help           Show this help.
   -v, --version        Show version.
 
-V0.1 ONLY: Ruby (Gemfile.lock). Multi-language coming in v0.2.
+Ruby only for now (Gemfile / Gemfile.lock). Set GITHUB_TOKEN to
+lift release-notes/advisories rate limit from 60/h to 5000/h.
 USAGE
 }
 
 model="claude-opus-4-7"
 since=""
 path="."
+include_transitive=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --model)      model="$2"; shift 2 ;;
     --since)      since="$2"; shift 2 ;;
     --path)       path="$2"; shift 2 ;;
+    --all)        include_transitive=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     -v|--version) echo "postcut $VERSION"; exit 0 ;;
     *)            echo "postcut: unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -60,18 +65,33 @@ if [ ! -f "$lockfile" ]; then
   exit 1
 fi
 
+gemfile="$path/Gemfile"
+filter_regex=""
+scope_label="all deps (Gemfile.lock)"
+if [ "$include_transitive" -eq 0 ] && [ -f "$gemfile" ]; then
+  direct=$(parse_gemfile "$gemfile")
+  if [ -n "$direct" ]; then
+    filter_regex="^($(printf '%s' "$direct" | tr '\n' '|' | sed 's/|$//'))$"
+    direct_count=$(printf '%s\n' "$direct" | wc -l | tr -d ' ')
+    scope_label="${direct_count} direct deps (Gemfile)"
+  fi
+fi
+
 deltas=$(parse_gemfile_lock "$lockfile" | while read -r name _; do
+  if [ -n "$filter_regex" ]; then
+    [[ "$name" =~ $filter_regex ]] || continue
+  fi
   block=$(fetch_ruby_delta "$name" "$cutoff")
   [ -n "$block" ] && printf '%s\n\n' "$block"
 done)
 
-echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label):"
+echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label, scope: $scope_label):"
 if [ -z "${GITHUB_TOKEN:-}" ]; then
   echo "(set GITHUB_TOKEN to lift release-notes rate limit from 60/h → 5000/h)"
 fi
 echo
 if [ -z "$deltas" ]; then
-  echo "(no post-cutoff updates for any gem in $lockfile)"
+  echo "(no post-cutoff updates in scope)"
 else
   printf '%s' "$deltas"
 fi
