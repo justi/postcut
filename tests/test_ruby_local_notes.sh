@@ -120,7 +120,13 @@ check_empty "empty csv → empty" "$out"
 out=$(ruby_local_notes nonexistent-gem-xyz "1.0.0")
 check_empty "unknown gem → empty (no install dir)" "$out"
 
-# ---- 8. Sibling-gem glob safety: pkg='rails' must not match 'rails-html-sanitizer' ----
+# ---- 8. Keep-a-Changelog style headers (`## [v0.16.0] - 2025-12-27`) ----
+out=$(ruby_local_notes bracketed 0.16.0)
+check_substr "bracketed: [v0.16.0] header parsed"               "  0.16.0:" "$out"
+check_substr "bracketed: bullet content emitted"                "Add Keep-a-Changelog style support" "$out"
+check_no_substr "bracketed: pre-cutoff section ignored"         "Old release before cutoff" "$out"
+
+# ---- 9. Sibling-gem glob safety: pkg='rails' must not match 'rails-html-sanitizer' ----
 # Fixture doesn't include the sibling gem so this is a passive guard;
 # add a fake sibling and re-check that ruby_local_notes still routes to
 # the meta-gem stitching path (sub-gems exist) rather than picking up

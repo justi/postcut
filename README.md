@@ -42,6 +42,7 @@ sqlite3: 2.9.0 → 2.9.4 (2026-05-06)
 postcut | pbcopy                 # paste into chat
 postcut --all                    # include transitive deps
 postcut --since 2025-06-01       # override cutoff
+postcut --summary                # security/breaking/deprecation only — compact LLM context
 ```
 
 ## Modes — local vs HTTP

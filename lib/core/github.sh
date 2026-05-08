@@ -99,15 +99,18 @@ _parse_changelog_content() {
   done
 
   # Header forms accepted:
-  #   "## 7.2.0", "## v7.2.0", "## [7.2.0]"
+  #   "## 7.2.0", "## v7.2.0", "## [7.2.0]", "## [v0.16.0]"
   #   "## Rails 8.1.3 ##"  (Rails sub-gem CHANGELOG style)
-  #   "## 1.2.3 (2024-01-01)"
+  #   "## 1.2.3 (2024-01-01)", "## [0.16.0] - 2025-12-27"
   # Optional prefix is restricted to a single alphabetic word + space
   # (covers "Rails ", "Version ") so `## Note: 1.2.3 is deprecated` does
   # not match — its colon kicks the prefix out of the [A-Za-z]+ class.
+  # Bracket comes before `v?` so `[v0.16.0]` (Keep-a-Changelog with v
+  # prefix) parses; the bracket alone (`[0.16.0]`) and the `v` alone
+  # (`v0.16.0`) still work because both are independently optional.
   local current_idx=-1 line bullet v idx
   while IFS= read -r line; do
-    if [[ "$line" =~ ^#+[[:space:]]+([A-Za-z]+[[:space:]])?v?\[?([0-9]+(\.[0-9]+)+[a-zA-Z0-9.]*) ]]; then
+    if [[ "$line" =~ ^#+[[:space:]]+([A-Za-z]+[[:space:]])?\[?v?([0-9]+(\.[0-9]+)+[a-zA-Z0-9.]*) ]]; then
       v="${BASH_REMATCH[2]}"
       current_idx=-1
       for ((idx = 0; idx < n; idx++)); do
