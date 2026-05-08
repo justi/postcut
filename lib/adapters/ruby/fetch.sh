@@ -41,13 +41,20 @@ fetch_ruby_delta() {
           ($highest.created_at[0:10]),
           ($post | map(.number) | join(","))
         ]
-      | @tsv
+      | join("|")
     ')
 
   [ -z "$tsv" ] && return 0
 
+  # Fields delimited with `|` (not tab/space): when a gem was first
+  # released post-cutoff `$pre.number` is null and produces an empty
+  # leading field. With IFS=$'\t' bash treats leading whitespace as
+  # significant only inside fields and strips a leading tab — every
+  # subsequent field would shift down one position, e.g. cur_v ending
+  # up with the date. `|` is not IFS whitespace, so leading-empty is
+  # preserved verbatim.
   local pre_v cur_v cur_date post_versions
-  IFS=$'\t' read -r pre_v cur_v cur_date post_versions <<< "$tsv"
+  IFS='|' read -r pre_v cur_v cur_date post_versions <<< "$tsv"
 
   # 2. Header line
   local pre_label="${pre_v:-(introduced)}"
