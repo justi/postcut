@@ -13,7 +13,8 @@ filter() {
   awk '
     /^[^[:space:]]/ { print; next }
     /^[[:space:]]*$/ { print; next }
-    /CVE-|GHSA-|[Ss]ecurity|[Bb]reaking|[Dd]eprecat|CRITICAL|critical/ { print }
+    /CVE-|GHSA-/ { print; next }
+    /(^|[^[:alpha:]])([Ss]ecurity|[Bb]reaking|[Dd]eprecat(ed|ion|es|ing)?|CRITICAL|critical)([^[:alpha:]]|$)/ { print }
   '
 }
 
@@ -29,6 +30,10 @@ puma: 6.6.1 (last seen) → 8.0.1 (current, 2026-04-26)
 bcrypt: 3.1.20 (last seen) → 3.1.22 (current, 2026-03-18)
   3.1.21: Routine maintenance update
   3.1.22: Drop support for Ruby 2.7 (deprecated)
+
+substr-trap: 1.0.0 (last seen) → 1.1.0 (current, 2026-03-01)
+  1.1.0: nonbreaking internal cleanup of cache layer
+  1.1.0: indiscriminate logging cleanup
 '
 
 failed=0
@@ -81,6 +86,10 @@ check_no_substr "dropped: routine maintenance"        "Routine maintenance"     
 check_no_substr "dropped: 'Fix encoding' (no keyword)" "Fix encoding errors"          "$filtered"
 check_no_substr "dropped: 'Fix insert_all' bullet"    "insert_all log message"        "$filtered"
 check_no_substr "dropped: SSL_shutdown bugfix"        "SSL_shutdown error handling"   "$filtered"
+
+# Word-boundary regression: substring matches must NOT trigger.
+check_no_substr "word boundary: 'nonbreaking' does not match 'breaking'" "nonbreaking internal cleanup" "$filtered"
+check_no_substr "word boundary: 'indiscriminate' does not match"          "indiscriminate logging"       "$filtered"
 
 echo
 if [ "$failed" -eq 0 ]; then

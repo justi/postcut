@@ -124,25 +124,43 @@ out=$(POSTCUT_CONFIG_DIR="$INSTALL_ROOT" "$POSTCUT" --since 2025-09-01 --output 
 check_eq    "multi-model + --output: exits non-zero"  "2"                                            "$rc"
 check_substr "multi-model + --output: explains why"  "--output requires a single model"             "$out"
 
-# ---- Missing-config hint: no config file, no --model ----
+# ---- Missing-config hint: no config file at all ----
 # Point CONFIG_DIR at an empty directory so load_models_config returns
-# nothing. Expect the friendly hint on stderr AND a successful run with
-# the default model (so the user gets a doc, not a hard failure).
+# nothing. Assert durable behavior — the hint mentions the path and the
+# default model, the user still gets a doc — rather than exact wording,
+# so harmless message tweaks don't break the test.
 EMPTY_INSTALL="$ROOT/tests/_e2e_empty_install"
 rm -rf "$EMPTY_INSTALL" "$WORKDIR/.postcut"
 mkdir -p "$EMPTY_INSTALL"
 
 out=$(POSTCUT_CONFIG_DIR="$EMPTY_INSTALL" "$POSTCUT" --since 2025-09-01 --path "$WORKDIR" 2>&1) || true
-check_substr "missing config: hint mentions config path"  "no models config at $EMPTY_INSTALL/.config/models"  "$out"
-check_substr "missing config: hint shows default model"   "using default 'claude-opus-4-7'"                    "$out"
-check_substr "missing config: hint suggests --model"      "Suppress this hint with --model NAME"               "$out"
-check_file   "missing config: still produces default doc"  "$WORKDIR/.postcut/claude-opus-4-7.md"
+check_substr "missing config: hint references the config file path" "$EMPTY_INSTALL/.config/models" "$out"
+check_substr "missing config: hint names the default model"         "claude-opus-4-7"               "$out"
+check_substr "missing config: hint mentions --model suppression"    "--model"                       "$out"
+check_file   "missing config: still produces default doc"           "$WORKDIR/.postcut/claude-opus-4-7.md"
 
-# Suppression: with --model the hint must NOT appear.
+# ---- All-comments-config branch: file exists, every line commented ----
+# Distinct from the missing-file case — installer seeds exactly this
+# shape, so a fresh-install user must not see "no models config".
+COMMENTED_INSTALL="$ROOT/tests/_e2e_commented_install"
+rm -rf "$COMMENTED_INSTALL" "$WORKDIR/.postcut"
+mkdir -p "$COMMENTED_INSTALL/.config"
+cat > "$COMMENTED_INSTALL/.config/models" <<'TPL'
+# All commented — same shape as the installer's seeded template
+# claude-opus-4-7
+# claude-haiku-4-5
+TPL
+
+out=$(POSTCUT_CONFIG_DIR="$COMMENTED_INSTALL" "$POSTCUT" --since 2025-09-01 --path "$WORKDIR" 2>&1) || true
+check_substr "all-commented: hint distinguishes from missing-file" "no active entries" "$out"
+check_substr "all-commented: hint names the file path"              "$COMMENTED_INSTALL/.config/models" "$out"
+check_substr "all-commented: still produces default-model doc"      "claude-opus-4-7" "$out"
+
+# Suppression: with --model the hint must NOT appear in either branch.
 rm -rf "$WORKDIR/.postcut"
 out=$(POSTCUT_CONFIG_DIR="$EMPTY_INSTALL" "$POSTCUT" --model some-model --since 2025-09-01 --path "$WORKDIR" 2>&1) || true
 ran=$((ran + 1))
-if printf '%s' "$out" | grep -qF -- "no models config"; then
+if printf '%s' "$out" | grep -qF -- "no models config" || printf '%s' "$out" | grep -qF -- "no active entries"; then
   printf 'FAIL  %-60s\n' "--model suppresses the missing-config hint"
   printf '       hint leaked: %s\n' "$out"
   failed=$((failed + 1))
@@ -150,7 +168,26 @@ else
   printf 'ok    %-60s\n' "--model suppresses the missing-config hint"
 fi
 
-rm -rf "$EMPTY_INSTALL"
+# ---- Path-traversal rejection: model id with / or .. is refused ----
+# Codex flagged that an id like "vendor/model" or "../escape" used as a
+# filename either escapes .postcut/ or fails silently when intermediate
+# dirs don't exist. postcut now refuses with exit 2.
+mkdir -p "$COMMENTED_INSTALL/.config"
+cat > "$COMMENTED_INSTALL/.config/models" <<'TPL'
+../escape
+TPL
+out=$(POSTCUT_CONFIG_DIR="$COMMENTED_INSTALL" "$POSTCUT" --since 2025-09-01 --path "$WORKDIR" 2>&1) && rc=0 || rc=$?
+check_eq    "model id with '..' rejected with exit 2"  "2"  "$rc"
+check_substr "rejection: error names the offending id"  "../escape"  "$out"
+
+cat > "$COMMENTED_INSTALL/.config/models" <<'TPL'
+vendor/model
+TPL
+out=$(POSTCUT_CONFIG_DIR="$COMMENTED_INSTALL" "$POSTCUT" --since 2025-09-01 --path "$WORKDIR" 2>&1) && rc=0 || rc=$?
+check_eq    "model id with '/' rejected with exit 2"   "2"  "$rc"
+check_substr "rejection: explains '/' is unsafe"        "must not contain"  "$out"
+
+rm -rf "$EMPTY_INSTALL" "$COMMENTED_INSTALL"
 
 echo
 if [ "$failed" -eq 0 ]; then
