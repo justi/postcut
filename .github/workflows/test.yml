@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: bash test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # test_install.sh pins the fixture remote to the current
+          # commit SHA — needs the full history of THIS commit, not a
+          # shallow clone (default fetch-depth=1).
+          fetch-depth: 0
+
+      - name: Verify required tooling
+        run: |
+          for cmd in bash git curl jq awk; do
+            command -v "$cmd" >/dev/null || { echo "missing $cmd"; exit 1; }
+          done
+          bash --version | head -1
+
+      - name: Run test suite
+        run: |
+          set -e
+          fail=0
+          for t in tests/test_*.sh; do
+            echo "=== $t ==="
+            if ! bash "$t"; then
+              fail=1
+            fi
+            echo
+          done
+          exit "$fail"

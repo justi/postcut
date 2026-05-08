@@ -6,6 +6,32 @@
 # Additional tools (e.g. bundler-audit) are checked per function and
 # gracefully skipped if absent.
 
+# ruby_check_advisory_db_freshness
+# Stderr: hint when ruby-advisory-db is older than 14 days, suggesting
+# `bundle-audit update`. Silent if bundler-audit is absent or the DB
+# directory isn't a git checkout (e.g. user managed it manually).
+#
+# POSTCUT_ADVISORY_DB_DIR overrides the default DB location for tests.
+ruby_check_advisory_db_freshness() {
+  command -v bundler-audit >/dev/null 2>&1 || return 0
+
+  local db_dir="${POSTCUT_ADVISORY_DB_DIR:-$HOME/.local/share/ruby-advisory-db}"
+  [ -d "$db_dir/.git" ] || return 0
+
+  local last_commit_epoch now age days
+  last_commit_epoch=$(git -C "$db_dir" log -1 --format=%ct 2>/dev/null) || return 0
+  [ -z "$last_commit_epoch" ] && return 0
+
+  now=$(date +%s)
+  age=$((now - last_commit_epoch))
+  days=$((age / 86400))
+
+  if [ "$days" -gt 14 ]; then
+    echo "postcut: ruby-advisory-db is ${days} days old at $db_dir" >&2
+    echo "         Run 'bundle-audit update' for fresh CVE data." >&2
+  fi
+}
+
 # ruby_local_metadata <pkg>
 # Stdout: best-effort source URI (github / homepage), or empty.
 # Reads from the locally-installed gem's gemspec — no HTTP.

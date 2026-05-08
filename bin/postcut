@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.3.0-dev"
+VERSION="0.3.0"
 
 # Resolve symlink chain so installs via `ln -s ... /usr/local/bin/postcut`
 # still find the lib/ next to the real script. macOS-friendly (no readlink -f).
@@ -184,6 +184,11 @@ for current_model in "${models[@]}"; do
       ;;
   esac
 done
+
+# Hint when the local CVE database is stale. Runs once before the loop
+# (the value is the same for every model) and is silent unless something
+# is actually old. No-op when bundler-audit isn't installed.
+ruby_check_advisory_db_freshness
 
 if [ -n "$output_path" ] && [ "${#models[@]}" -gt 1 ]; then
   echo "postcut: --output requires a single model (got ${#models[@]})" >&2

@@ -117,9 +117,9 @@ Set `GITHUB_TOKEN` to lift the rate limit on registry/advisory calls.
 
 ## Status
 
-`v0.3-dev`. Ruby only. Dual-mode complete (metadata, notes, advisories).
-Save mode + per-model snapshot is the new default; `--stdout` keeps the
-legacy pipe.
+`v0.3.0`. Ruby only. Dual-mode complete (metadata, notes, advisories).
+Save mode + per-model snapshot is the default; `--stdout` keeps the
+legacy pipe. CI on every PR (GitHub Actions, full bash suite).
 
 Roadmap: Node.js, Python, Rust, Go adapters. Same offline-prep flow,
 different lockfile.
