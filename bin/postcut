@@ -20,10 +20,14 @@ ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
 source "$ROOT/lib/core/cutoff.sh"
 # shellcheck source=../lib/core/github.sh
 source "$ROOT/lib/core/github.sh"
+# shellcheck source=../lib/core/router.sh
+source "$ROOT/lib/core/router.sh"
 # shellcheck source=../lib/adapters/ruby/parse.sh
 source "$ROOT/lib/adapters/ruby/parse.sh"
 # shellcheck source=../lib/adapters/ruby/fetch.sh
 source "$ROOT/lib/adapters/ruby/fetch.sh"
+# shellcheck source=../lib/adapters/ruby/local.sh
+source "$ROOT/lib/adapters/ruby/local.sh"
 
 usage() {
   cat <<'USAGE'
