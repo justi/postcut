@@ -5,12 +5,21 @@
 ## Install
 
 ```bash
-git clone https://github.com/justi/postcut.git ~/.postcut
-ln -s ~/.postcut/bin/postcut /usr/local/bin/postcut
-export GITHUB_TOKEN=$(gh auth token)   # 60/h → 5000/h
+curl -fsSL https://raw.githubusercontent.com/justi/postcut/main/install.sh | bash
 ```
 
-Requires `bash 3.2+`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
+Clones to `~/.postcut`, symlinks `bin/postcut` into the first writable bin dir on your PATH (`/usr/local/bin`, `~/.local/bin`, `~/bin`), seeds `~/.postcut/.config/models` with a commented template, and smoke-tests `postcut --version`. Re-running pulls the latest changes and keeps your edits to the config file.
+
+If `gh` is authenticated, the installer prints (does not write) the `GITHUB_TOKEN` export line you can drop into your shell rc to lift the GitHub rate limit (60/h → 5000/h).
+
+Manual install:
+
+```bash
+git clone https://github.com/justi/postcut.git ~/.postcut
+ln -s ~/.postcut/bin/postcut /usr/local/bin/postcut
+```
+
+Requires `bash 3.2+`, `git`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
 
 ## Usage
 
