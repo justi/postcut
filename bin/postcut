@@ -134,20 +134,26 @@ if [ ! -f "$lockfile" ]; then
 fi
 
 # Decide which models to process. Explicit --model pins to one; otherwise
-# the global config is consulted; otherwise the default. --since only
-# overrides the cutoff date — every model in the loop uses it.
-# POSTCUT_CONFIG_DIR overrides the install root for config lookup, used
-# by the E2E test; harmless for normal runs (default: $ROOT).
+# the global config is consulted; otherwise the default + a one-time
+# hint so a first-run user knows where to put the config file.
+# --since only overrides the cutoff date — every model in the loop uses
+# it. POSTCUT_CONFIG_DIR overrides the install root for config lookup
+# (used by the E2E test, harmless for normal runs).
 models=()
 if [ -n "$model_explicit" ]; then
   models=("$model_explicit")
 else
-  config_models=$(load_models_config "${POSTCUT_CONFIG_DIR:-$ROOT}")
+  config_dir="${POSTCUT_CONFIG_DIR:-$ROOT}"
+  config_models=$(load_models_config "$config_dir")
   if [ -n "$config_models" ]; then
     while IFS= read -r m; do
       [ -n "$m" ] && models+=("$m")
     done <<< "$config_models"
   else
+    echo "postcut: no models config at ${config_dir}/.config/models" >&2
+    echo "         using default 'claude-opus-4-7'. To snapshot multiple" >&2
+    echo "         models in one run, create that file with one model id" >&2
+    echo "         per line. Suppress this hint with --model NAME." >&2
     models=("claude-opus-4-7")
   fi
 fi

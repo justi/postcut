@@ -124,6 +124,34 @@ out=$(POSTCUT_CONFIG_DIR="$INSTALL_ROOT" "$POSTCUT" --since 2025-09-01 --output 
 check_eq    "multi-model + --output: exits non-zero"  "2"                                            "$rc"
 check_substr "multi-model + --output: explains why"  "--output requires a single model"             "$out"
 
+# ---- Missing-config hint: no config file, no --model ----
+# Point CONFIG_DIR at an empty directory so load_models_config returns
+# nothing. Expect the friendly hint on stderr AND a successful run with
+# the default model (so the user gets a doc, not a hard failure).
+EMPTY_INSTALL="$ROOT/tests/_e2e_empty_install"
+rm -rf "$EMPTY_INSTALL" "$WORKDIR/.postcut"
+mkdir -p "$EMPTY_INSTALL"
+
+out=$(POSTCUT_CONFIG_DIR="$EMPTY_INSTALL" "$POSTCUT" --since 2025-09-01 --path "$WORKDIR" 2>&1) || true
+check_substr "missing config: hint mentions config path"  "no models config at $EMPTY_INSTALL/.config/models"  "$out"
+check_substr "missing config: hint shows default model"   "using default 'claude-opus-4-7'"                    "$out"
+check_substr "missing config: hint suggests --model"      "Suppress this hint with --model NAME"               "$out"
+check_file   "missing config: still produces default doc"  "$WORKDIR/.postcut/claude-opus-4-7.md"
+
+# Suppression: with --model the hint must NOT appear.
+rm -rf "$WORKDIR/.postcut"
+out=$(POSTCUT_CONFIG_DIR="$EMPTY_INSTALL" "$POSTCUT" --model some-model --since 2025-09-01 --path "$WORKDIR" 2>&1) || true
+ran=$((ran + 1))
+if printf '%s' "$out" | grep -qF -- "no models config"; then
+  printf 'FAIL  %-60s\n' "--model suppresses the missing-config hint"
+  printf '       hint leaked: %s\n' "$out"
+  failed=$((failed + 1))
+else
+  printf 'ok    %-60s\n' "--model suppresses the missing-config hint"
+fi
+
+rm -rf "$EMPTY_INSTALL"
+
 echo
 if [ "$failed" -eq 0 ]; then
   printf '%s/%s passed\n' "$ran" "$ran"
