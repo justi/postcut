@@ -3,10 +3,12 @@
 #
 # Block format:
 #   <name>: <pre_cutoff_latest> (last seen) → <current_latest> (current, <YYYY-MM-DD>)
-#     <ver>: <bullet1>; <bullet2>; <bullet3>      [if GitHub release notes available]
-#     <ver>: <CVE-XXXX-NNNN> ... [security]
+#     <ver>: <bullet1>; <bullet2>; <bullet3>
+#     [<sub-gem>] <ver>: <bullets>                (Rails meta-gem only)
+#     <ver>: <GHSA-...> [<severity>] <CVE-...>: <summary>
 #
-# Silent if nothing post-cutoff.
+# A first-release-post-cutoff gem uses "(introduced)" in place of the
+# pre-cutoff version. Silent if nothing post-cutoff.
 
 fetch_ruby_delta() {
   local name="$1"

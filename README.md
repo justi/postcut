@@ -59,6 +59,13 @@ gpt-5
 
 Then `postcut` produces `.postcut/claude-opus-4-7.md`, `.postcut/claude-haiku-4-5.md`, `.postcut/gpt-5.md` — pick whichever model you actually run with.
 
+In flight, no internet:
+
+```bash
+cat .postcut/claude-opus-4-7.md | pbcopy   # paste into Claude
+cat .postcut/gpt-5.md                      # or read it yourself
+```
+
 ```bash
 postcut --model claude-opus-4-7  # single model, skips config
 postcut --since 2026-01-31       # explicit cutoff (skips models.dev lookup)
