@@ -186,6 +186,19 @@ _ruby_local_notes_one() {
     return 0
   fi
 
+  # `sort -V` is GNU and modern BSD/Apple sort; on the rare system
+  # without it, treat the gating result as "can't determine" and let
+  # HTTP handle this gem rather than emitting wrong notes. Probe once
+  # per shell, cache the result.
+  if [ -z "${_POSTCUT_SORT_V_OK:-}" ]; then
+    if printf '1\n2\n' | sort -V >/dev/null 2>&1; then
+      _POSTCUT_SORT_V_OK=1
+    else
+      _POSTCUT_SORT_V_OK=0
+    fi
+  fi
+  [ "$_POSTCUT_SORT_V_OK" = "1" ] || return 0
+
   local max_csv_v
   max_csv_v=$(printf '%s\n' "${versions_csv//,/$'\n'}" | sort -V | tail -1)
   local highest

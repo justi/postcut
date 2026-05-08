@@ -77,6 +77,20 @@ _postcut_install() {
   fi
 
   # 3. Symlink into a bin dir on PATH ---------------------------------------
+  # Validate the override up front so an unwritable / missing directory
+  # surfaces with our prefix and exits the installer, instead of leaking
+  # through to a raw `ln -sf` error message.
+  if [ -n "${POSTCUT_BIN_DIR:-}" ]; then
+    if [ ! -d "$POSTCUT_BIN_DIR" ]; then
+      err "POSTCUT_BIN_DIR=$POSTCUT_BIN_DIR is not a directory"
+      return 1
+    fi
+    if [ ! -w "$POSTCUT_BIN_DIR" ]; then
+      err "POSTCUT_BIN_DIR=$POSTCUT_BIN_DIR is not writable"
+      return 1
+    fi
+  fi
+
   pick_bin_dir() {
     if [ -n "${POSTCUT_BIN_DIR:-}" ]; then
       printf '%s\n' "$POSTCUT_BIN_DIR"

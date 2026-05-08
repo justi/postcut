@@ -145,7 +145,31 @@ else
   failed=$((failed + 1))
 fi
 
-# ---- 4. Smoke-run the installed binary --------------------------------------
+# ---- 4. POSTCUT_BIN_DIR validation: missing dir is rejected up front --------
+rm -rf "$INSTALL_DIR"
+out=$(POSTCUT_INSTALL_DIR="$INSTALL_DIR" \
+      POSTCUT_BIN_DIR="$WORKDIR/does-not-exist" \
+      POSTCUT_REPO_URL="$ROOT" \
+      POSTCUT_GIT_REF="$current_sha" \
+      bash "$INSTALLER" 2>&1) && rc=0 || rc=$?
+check_eq    "missing BIN_DIR override: exits non-zero"  "1"                              "$rc"
+check_substr "missing BIN_DIR override: error names it" "is not a directory"             "$out"
+
+# ---- 5. POSTCUT_BIN_DIR validation: read-only dir is rejected ---------------
+RO_BIN="$WORKDIR/ro-bin"
+rm -rf "$RO_BIN" "$INSTALL_DIR"
+mkdir -p "$RO_BIN"
+chmod -w "$RO_BIN"
+out=$(POSTCUT_INSTALL_DIR="$INSTALL_DIR" \
+      POSTCUT_BIN_DIR="$RO_BIN" \
+      POSTCUT_REPO_URL="$ROOT" \
+      POSTCUT_GIT_REF="$current_sha" \
+      bash "$INSTALLER" 2>&1) && rc=0 || rc=$?
+check_eq    "read-only BIN_DIR override: exits non-zero"  "1"                            "$rc"
+check_substr "read-only BIN_DIR override: error explains" "is not writable"              "$out"
+chmod +w "$RO_BIN"
+
+# ---- 6. Smoke-run the installed binary --------------------------------------
 rm -rf "$INSTALL_DIR" "$BIN_DIR/postcut"
 mkdir -p "$BIN_DIR"
 run_installer >/dev/null

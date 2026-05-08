@@ -21,6 +21,9 @@ ln -s ~/.postcut/bin/postcut /usr/local/bin/postcut
 
 Requires `bash 3.2+`, `git`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
 
+Optional: `gem install bundler-audit && bundle-audit update` enables the
+local CVE database (lifts security checks off the GitHub Advisories API).
+
 ## Usage
 
 ```bash
@@ -78,6 +81,7 @@ cat .postcut/gpt-5.md                      # or read it yourself
 ```bash
 postcut --model claude-opus-4-7  # single model, skips config
 postcut --since 2026-01-31       # explicit cutoff (skips models.dev lookup)
+postcut --path ~/code/my-app     # run against a project other than cwd
 postcut --all                    # include transitive deps
 postcut --summary                # security/breaking/deprecation only — compact context
 postcut --output my-context.md   # custom path (single model)
@@ -117,7 +121,7 @@ Set `GITHUB_TOKEN` to lift the rate limit on registry/advisory calls.
 
 ## Status
 
-`v0.3.0`. Ruby only. Dual-mode complete (metadata, notes, advisories).
+`v0.3.1`. Ruby only. Dual-mode complete (metadata, notes, advisories).
 Save mode + per-model snapshot is the default; `--stdout` keeps the
 legacy pipe. CI on every PR (GitHub Actions, full bash suite).
 
