@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.2.0-dev"
+VERSION="0.3.0-dev"
 
 # Resolve symlink chain so installs via `ln -s ... /usr/local/bin/postcut`
 # still find the lib/ next to the real script. macOS-friendly (no readlink -f).
@@ -22,6 +22,8 @@ source "$ROOT/lib/core/cutoff.sh"
 source "$ROOT/lib/core/github.sh"
 # shellcheck source=../lib/core/router.sh
 source "$ROOT/lib/core/router.sh"
+# shellcheck source=../lib/core/save.sh
+source "$ROOT/lib/core/save.sh"
 # shellcheck source=../lib/adapters/ruby/parse.sh
 source "$ROOT/lib/adapters/ruby/parse.sh"
 # shellcheck source=../lib/adapters/ruby/fetch.sh
@@ -31,54 +33,78 @@ source "$ROOT/lib/adapters/ruby/local.sh"
 
 usage() {
   cat <<'USAGE'
-postcut — dependency deltas since your LLM's training cutoff.
+postcut — offline-prep dependency context for your LLM.
+
+Run inside a project directory. Generates a markdown document per model
+listing every gem that changed since that model's training cutoff —
+written to `.postcut/<model>.md` so you can `cat` it into a chat session
+later, even without internet.
 
 USAGE:
   postcut [OPTIONS]
 
 OPTIONS:
-  --model NAME         Model id from models.dev (default: claude-opus-4-7).
+  --model NAME         Single model id from models.dev. Skips the global
+                       models config. Default: claude-opus-4-7 if neither
+                       --model nor a config file is present.
   --since YYYY-MM-DD   Override cutoff date (skips models.dev lookup).
+                       Implies single-model run.
   --path DIR           Project directory (default: cwd).
   --all                Include transitive deps (default: direct deps from
                        Gemfile only — naturally dedupes Rails monorepo).
   --summary            Filter bullets to security/breaking/deprecation
-                       only. Headers always kept; useful as compact LLM
-                       context.
+                       only. Compact output for tight LLM context.
+  --output PATH        Write to PATH instead of `.postcut/<model>.md`.
+                       Only valid with a single model.
+  --stdout             Emit to stdout instead of saving (legacy / pipe).
   -h, --help           Show this help.
   -v, --version        Show version.
 
-Ruby only for now (Gemfile / Gemfile.lock). Set GITHUB_TOKEN to
-lift release-notes/advisories rate limit from 60/h to 5000/h.
+GLOBAL MODELS CONFIG:
+  When neither --model nor --since is passed, postcut looks for a list
+  of model ids at:
+
+    <install_root>/.config/models
+
+  One id per line, `#` for comments, blanks ignored. If present, postcut
+  generates one document per listed model in `.postcut/`. Otherwise the
+  default model is used.
+
+Ruby only for now (Gemfile / Gemfile.lock). Set GITHUB_TOKEN to lift
+the release-notes/advisories rate limit from 60/h to 5000/h.
 USAGE
 }
 
-model="claude-opus-4-7"
+model_explicit=""
 since=""
 path="."
 include_transitive=0
 summary_only=0
+output_path=""
+mode_stdout=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --model)      model="$2"; shift 2 ;;
+    --model)      model_explicit="$2"; shift 2 ;;
     --since)      since="$2"; shift 2 ;;
     --path)       path="$2"; shift 2 ;;
     --all)        include_transitive=1; shift ;;
     --summary)    summary_only=1; shift ;;
+    --output)     output_path="$2"; shift 2 ;;
+    --stdout)     mode_stdout=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     -v|--version) echo "postcut $VERSION"; exit 0 ;;
     *)            echo "postcut: unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
-if [ -n "$since" ]; then
-  cutoff="$since"
-  source_label="--since"
-else
-  cutoff=$(resolve_cutoff "$model")
-  source_label="models.dev/$model"
+# Resolve absolute project path so ".postcut/" lands where the user
+# expects regardless of cwd at exec time.
+if [ ! -d "$path" ]; then
+  echo "postcut: path '$path' is not a directory" >&2
+  exit 2
 fi
+path=$(cd "$path" && pwd)
 
 lockfile="$path/Gemfile.lock"
 if [ ! -f "$lockfile" ]; then
@@ -99,14 +125,40 @@ if [ ! -f "$lockfile" ]; then
 
   if [ -n "$detected" ]; then
     echo "postcut: $detected project detected in $path." >&2
-    echo "v0.2 supports only Ruby (Gemfile.lock); $detected adapter is on the v0.3 roadmap." >&2
+    echo "v0.3 supports only Ruby (Gemfile.lock); $detected adapter is on the roadmap." >&2
   else
     echo "postcut: no Gemfile.lock in $path." >&2
-    echo "v0.2 supports only Ruby projects. Multi-language adapters (npm, pypi, cargo, go) come in v0.3+." >&2
+    echo "v0.3 supports only Ruby projects. Multi-language adapters come later." >&2
   fi
   exit 1
 fi
 
+# Decide which models to process. Explicit --model or --since pins to one;
+# otherwise the global config is consulted; otherwise the default.
+models=()
+if [ -n "$model_explicit" ]; then
+  models=("$model_explicit")
+elif [ -n "$since" ]; then
+  models=("claude-opus-4-7")  # placeholder — cutoff comes from --since anyway
+else
+  config_models=$(load_models_config "$ROOT")
+  if [ -n "$config_models" ]; then
+    while IFS= read -r m; do
+      [ -n "$m" ] && models+=("$m")
+    done <<< "$config_models"
+  else
+    models=("claude-opus-4-7")
+  fi
+fi
+
+if [ -n "$output_path" ] && [ "${#models[@]}" -gt 1 ]; then
+  echo "postcut: --output requires a single model (got ${#models[@]})" >&2
+  echo "        either pass --model NAME, or omit --output and let postcut" >&2
+  echo "        write per-model files into .postcut/" >&2
+  exit 2
+fi
+
+# Compute filter scope (direct deps from Gemfile, unless --all).
 gemfile="$path/Gemfile"
 filter_regex=""
 scope_label="all deps (Gemfile.lock)"
@@ -119,38 +171,94 @@ if [ "$include_transitive" -eq 0 ] && [ -f "$gemfile" ]; then
   fi
 fi
 
-deltas=""
-while read -r name _; do
-  if [ -n "$filter_regex" ]; then
-    [[ "$name" =~ $filter_regex ]] || continue
-  fi
-  block=$(fetch_ruby_delta "$name" "$cutoff" 2>/dev/null) || block=""
-  if [ -n "$block" ]; then
-    deltas="${deltas}${block}"$'\n\n'
-  fi
-done < <(parse_gemfile_lock "$lockfile")
+# Inner loop: per-model delta generation. Returns the (optionally
+# summary-filtered) deltas string on stdout; the caller wraps it.
+generate_deltas() {
+  local cutoff="$1"
+  local out=""
+  local block=""
+  while read -r name _; do
+    if [ -n "$filter_regex" ]; then
+      [[ "$name" =~ $filter_regex ]] || continue
+    fi
+    block=$(fetch_ruby_delta "$name" "$cutoff" 2>/dev/null) || block=""
+    if [ -n "$block" ]; then
+      out="${out}${block}"$'\n\n'
+    fi
+  done < <(parse_gemfile_lock "$lockfile")
 
-if [ "$summary_only" -eq 1 ] && [ -n "$deltas" ]; then
-  # Keep headers (lines starting with a non-space) and blank lines
-  # verbatim; drop indented bullet lines unless they mention security
-  # or breaking-change keywords. Lets LLMs spend tokens on the
-  # high-signal subset instead of every patch's release notes.
-  deltas=$(printf '%s' "$deltas" | awk '
-    /^[^[:space:]]/ { print; next }
-    /^[[:space:]]*$/ { print; next }
-    /CVE-|GHSA-|[Ss]ecurity|[Bb]reaking|[Dd]eprecat|CRITICAL|critical/ { print }
-  ')
+  if [ "$summary_only" -eq 1 ] && [ -n "$out" ]; then
+    out=$(printf '%s' "$out" | awk '
+      /^[^[:space:]]/ { print; next }
+      /^[[:space:]]*$/ { print; next }
+      /CVE-|GHSA-|[Ss]ecurity|[Bb]reaking|[Dd]eprecat|CRITICAL|critical/ { print }
+    ')
+  fi
+
+  printf '%s' "$out"
+}
+
+project_name=$(basename "$path")
+save_dir=$(default_save_dir "$path")
+
+if [ "$mode_stdout" -eq 0 ]; then
+  mkdir -p "$save_dir"
 fi
 
-scope_suffix=""
-[ "$summary_only" -eq 1 ] && scope_suffix=", summary"
-echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label, scope: ${scope_label}${scope_suffix}):"
-if [ -z "${GITHUB_TOKEN:-}" ]; then
-  echo "(set GITHUB_TOKEN to lift release-notes rate limit from 60/h → 5000/h)"
-fi
-echo
-if [ -z "$deltas" ]; then
-  echo "(no post-cutoff updates in scope)"
-else
-  printf '%s' "$deltas"
-fi
+for current_model in "${models[@]}"; do
+  if [ -n "$since" ]; then
+    cutoff="$since"
+    cutoff_source="--since"
+  else
+    cutoff=$(resolve_cutoff "$current_model")
+    cutoff_source="models.dev/$current_model"
+  fi
+
+  scope_suffix=""
+  [ "$summary_only" -eq 1 ] && scope_suffix=", summary"
+
+  deltas=$(generate_deltas "$cutoff")
+
+  if [ "$mode_stdout" -eq 1 ]; then
+    # Legacy plain-text output, one model only (the loop will print a
+    # separator between models if a config produced multiple).
+    if [ "${#models[@]}" -gt 1 ]; then
+      printf '\n=== %s (cutoff: %s) ===\n\n' "$current_model" "$cutoff"
+    fi
+    echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $cutoff_source, scope: ${scope_label}${scope_suffix}):"
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+      echo "(set GITHUB_TOKEN to lift release-notes rate limit from 60/h → 5000/h)"
+    fi
+    echo
+    if [ -z "$deltas" ]; then
+      echo "(no post-cutoff updates in scope)"
+    else
+      printf '%s' "$deltas"
+    fi
+    continue
+  fi
+
+  # Save mode (default).
+  if [ -n "$output_path" ]; then
+    target="$output_path"
+    mkdir -p "$(dirname "$target")"
+  else
+    target="${save_dir}/$(default_save_filename "$current_model")"
+  fi
+
+  format_markdown_doc \
+    "$project_name" \
+    "$current_model" \
+    "$cutoff" \
+    "$cutoff_source" \
+    "${scope_label}${scope_suffix}" \
+    "$deltas" \
+    > "$target"
+
+  # Brief stderr report so the user sees what happened.
+  update_count=0
+  [ -n "$deltas" ] && update_count=$(printf '%s\n' "$deltas" | grep -cE '^[a-zA-Z0-9_.-]+: .* \(current,' || true)
+  printf 'postcut: wrote %s (%s, cutoff %s, %s update%s)\n' \
+    "$target" "$current_model" "$cutoff" "$update_count" \
+    "$([ "$update_count" = "1" ] && echo "" || echo "s")" >&2
+done
