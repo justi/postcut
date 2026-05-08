@@ -74,14 +74,16 @@ check_eq() {
 }
 
 # Use the project's own git history as the "remote" so the test runs
-# offline. The HEAD branch is whatever you're on while running tests.
-current_branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)
+# offline. Pin to the current commit SHA — survives detached-HEAD CI
+# checkouts where `rev-parse --abbrev-ref HEAD` would just yield "HEAD"
+# and `git checkout HEAD` would do nothing useful.
+current_sha=$(git -C "$ROOT" rev-parse HEAD)
 
 run_installer() {
   POSTCUT_INSTALL_DIR="$INSTALL_DIR" \
   POSTCUT_BIN_DIR="$BIN_DIR" \
   POSTCUT_REPO_URL="$ROOT" \
-  POSTCUT_GIT_REF="$current_branch" \
+  POSTCUT_GIT_REF="$current_sha" \
   PATH="$BIN_DIR:$PATH" \
   bash "$INSTALLER" 2>&1
 }

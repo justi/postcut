@@ -139,24 +139,51 @@ fi
 # --since only overrides the cutoff date — every model in the loop uses
 # it. POSTCUT_CONFIG_DIR overrides the install root for config lookup
 # (used by the E2E test, harmless for normal runs).
+config_dir="${POSTCUT_CONFIG_DIR:-$ROOT}"
+config_file="$config_dir/.config/models"
 models=()
 if [ -n "$model_explicit" ]; then
   models=("$model_explicit")
 else
-  config_dir="${POSTCUT_CONFIG_DIR:-$ROOT}"
   config_models=$(load_models_config "$config_dir")
   if [ -n "$config_models" ]; then
     while IFS= read -r m; do
       [ -n "$m" ] && models+=("$m")
     done <<< "$config_models"
   else
-    echo "postcut: no models config at ${config_dir}/.config/models" >&2
-    echo "         using default 'claude-opus-4-7'. To snapshot multiple" >&2
-    echo "         models in one run, create that file with one model id" >&2
-    echo "         per line. Suppress this hint with --model NAME." >&2
+    # Distinguish "file is missing" from "file exists but every line is
+    # commented out" — the installer seeds exactly the latter shape, so
+    # a fresh-install user sees a confusing "no models config" message
+    # otherwise.
+    if [ -f "$config_file" ]; then
+      echo "postcut: models config at $config_file has no active entries" >&2
+      echo "         (all lines commented). Using default 'claude-opus-4-7'." >&2
+      echo "         Uncomment a model id in that file to include it." >&2
+    else
+      echo "postcut: no models config at $config_file" >&2
+      echo "         using default 'claude-opus-4-7'. To snapshot multiple" >&2
+      echo "         models in one run, create that file with one model id" >&2
+      echo "         per line." >&2
+    fi
+    echo "         Suppress this hint with --model NAME." >&2
     models=("claude-opus-4-7")
   fi
 fi
+
+# Reject model IDs that would escape `.postcut/` or land in a missing
+# subdirectory. Models on models.dev never contain slashes; if the user
+# put one there it's almost certainly a mistake (or an attempt to abuse
+# the save path), and silently truncating to basename would surprise.
+for current_model in "${models[@]}"; do
+  case "$current_model" in
+    */* | *..* | "" | .*)
+      echo "postcut: invalid model id '$current_model' — must not contain" >&2
+      echo "         '/' or '..' and must not start with '.'" >&2
+      echo "         (rejected for safety; check $config_file)" >&2
+      exit 2
+      ;;
+  esac
+done
 
 if [ -n "$output_path" ] && [ "${#models[@]}" -gt 1 ]; then
   echo "postcut: --output requires a single model (got ${#models[@]})" >&2
@@ -195,10 +222,17 @@ generate_deltas() {
   done < <(parse_gemfile_lock "$lockfile")
 
   if [ "$summary_only" -eq 1 ] && [ -n "$out" ]; then
+    # Keyword regex uses word-ish boundaries (start of line / non-letter
+    # before, non-letter / EOL after) so substrings inside larger words
+    # don't trigger — "nonbreaking" must not match "breaking", and
+    # "discriminate" must not match "criminal" via "critical" pattern.
+    # CVE-/GHSA- ids end with a hyphen-digit sequence and don't have
+    # this issue.
     out=$(printf '%s' "$out" | awk '
       /^[^[:space:]]/ { print; next }
       /^[[:space:]]*$/ { print; next }
-      /CVE-|GHSA-|[Ss]ecurity|[Bb]reaking|[Dd]eprecat|CRITICAL|critical/ { print }
+      /CVE-|GHSA-/ { print; next }
+      /(^|[^[:alpha:]])([Ss]ecurity|[Bb]reaking|[Dd]eprecat(ed|ion|es|ing)?|CRITICAL|critical)([^[:alpha:]]|$)/ { print }
     ')
   fi
 
