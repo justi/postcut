@@ -168,6 +168,29 @@ else
   printf 'ok    %-60s\n' "--model suppresses the missing-config hint"
 fi
 
+# ---- --output + --stdout mutual exclusion ----
+out=$(POSTCUT_CONFIG_DIR="$EMPTY_INSTALL" "$POSTCUT" --since 2025-09-01 --model x --output "$WORKDIR/o.md" --stdout --path "$WORKDIR" 2>&1) && rc=0 || rc=$?
+check_eq    "--output + --stdout: exits non-zero"           "2"                                "$rc"
+check_substr "--output + --stdout: explains conflict"        "mutually exclusive"               "$out"
+
+# ---- .postcut as a file (not a directory) ----
+rm -rf "$WORKDIR/.postcut"
+touch "$WORKDIR/.postcut"
+out=$(POSTCUT_CONFIG_DIR="$EMPTY_INSTALL" "$POSTCUT" --since 2025-09-01 --model x --path "$WORKDIR" 2>&1) && rc=0 || rc=$?
+check_eq    "save dir is a file: exits non-zero"             "2"                                "$rc"
+check_substr "save dir is a file: explains the issue"        "exists but is not a directory"    "$out"
+rm -f "$WORKDIR/.postcut"
+
+# ---- Empty config file (zero bytes) ----
+ZERO_INSTALL="$ROOT/tests/_e2e_zero_install"
+rm -rf "$ZERO_INSTALL" "$WORKDIR/.postcut"
+mkdir -p "$ZERO_INSTALL/.config"
+: > "$ZERO_INSTALL/.config/models"   # zero-byte file
+out=$(POSTCUT_CONFIG_DIR="$ZERO_INSTALL" "$POSTCUT" --since 2025-09-01 --path "$WORKDIR" 2>&1) || true
+check_substr "empty config (zero lines): hint says no active entries" "no active entries" "$out"
+check_substr "empty config: still produces default doc"               "claude-opus-4-7"   "$out"
+rm -rf "$ZERO_INSTALL"
+
 # ---- Path-traversal rejection: model id with / or .. is refused ----
 # Codex flagged that an id like "vendor/model" or "../escape" used as a
 # filename either escapes .postcut/ or fails silently when intermediate

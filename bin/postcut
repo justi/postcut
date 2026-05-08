@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.3.1"
 
 # Resolve symlink chain so installs via `ln -s ... /usr/local/bin/postcut`
 # still find the lib/ next to the real script. macOS-friendly (no readlink -f).
@@ -151,14 +151,15 @@ else
       [ -n "$m" ] && models+=("$m")
     done <<< "$config_models"
   else
-    # Distinguish "file is missing" from "file exists but every line is
-    # commented out" — the installer seeds exactly the latter shape, so
+    # Distinguish "file is missing" from "file exists but every line
+    # is empty or commented" — the installer seeds the latter shape, so
     # a fresh-install user sees a confusing "no models config" message
-    # otherwise.
+    # otherwise. Both empty files and all-comments files land here; the
+    # message stays neutral about which.
     if [ -f "$config_file" ]; then
-      echo "postcut: models config at $config_file has no active entries" >&2
-      echo "         (all lines commented). Using default 'claude-opus-4-7'." >&2
-      echo "         Uncomment a model id in that file to include it." >&2
+      echo "postcut: models config at $config_file has no active entries." >&2
+      echo "         Using default 'claude-opus-4-7'. Add a model id (one" >&2
+      echo "         per line, '#' for comments) to that file to include it." >&2
     else
       echo "postcut: no models config at $config_file" >&2
       echo "         using default 'claude-opus-4-7'. To snapshot multiple" >&2
@@ -194,6 +195,17 @@ if [ -n "$output_path" ] && [ "${#models[@]}" -gt 1 ]; then
   echo "postcut: --output requires a single model (got ${#models[@]})" >&2
   echo "        either pass --model NAME, or omit --output and let postcut" >&2
   echo "        write per-model files into .postcut/" >&2
+  exit 2
+fi
+
+# --output and --stdout describe two different sinks; passing both would
+# silently honor only --stdout (the file flag has no effect). Reject the
+# combination explicitly so the user isn't left wondering where the file
+# went.
+if [ -n "$output_path" ] && [ "$mode_stdout" -eq 1 ]; then
+  echo "postcut: --output and --stdout are mutually exclusive" >&2
+  echo "        --stdout writes to stdout instead of saving; --output picks" >&2
+  echo "        a save destination. Pick one." >&2
   exit 2
 fi
 
@@ -248,6 +260,16 @@ project_name=$(basename "$path")
 save_dir=$(default_save_dir "$path")
 
 if [ "$mode_stdout" -eq 0 ]; then
+  # Defensive check: if `.postcut` already exists as a non-directory
+  # (someone did `touch .postcut` by accident), `mkdir -p` would fail
+  # with a raw, confusing message. Surface it with our prefix and a
+  # clear remediation instead.
+  if [ -e "$save_dir" ] && [ ! -d "$save_dir" ]; then
+    echo "postcut: $save_dir exists but is not a directory" >&2
+    echo "        remove it and re-run, or pass --output PATH to write" >&2
+    echo "        somewhere else" >&2
+    exit 2
+  fi
   mkdir -p "$save_dir"
 fi
 
