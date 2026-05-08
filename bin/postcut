@@ -42,6 +42,9 @@ OPTIONS:
   --path DIR           Project directory (default: cwd).
   --all                Include transitive deps (default: direct deps from
                        Gemfile only — naturally dedupes Rails monorepo).
+  --summary            Filter bullets to security/breaking/deprecation
+                       only. Headers always kept; useful as compact LLM
+                       context.
   -h, --help           Show this help.
   -v, --version        Show version.
 
@@ -54,6 +57,7 @@ model="claude-opus-4-7"
 since=""
 path="."
 include_transitive=0
+summary_only=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -61,6 +65,7 @@ while [ $# -gt 0 ]; do
     --since)      since="$2"; shift 2 ;;
     --path)       path="$2"; shift 2 ;;
     --all)        include_transitive=1; shift ;;
+    --summary)    summary_only=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     -v|--version) echo "postcut $VERSION"; exit 0 ;;
     *)            echo "postcut: unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -125,7 +130,21 @@ while read -r name _; do
   fi
 done < <(parse_gemfile_lock "$lockfile")
 
-echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label, scope: $scope_label):"
+if [ "$summary_only" -eq 1 ] && [ -n "$deltas" ]; then
+  # Keep headers (lines starting with a non-space) and blank lines
+  # verbatim; drop indented bullet lines unless they mention security
+  # or breaking-change keywords. Lets LLMs spend tokens on the
+  # high-signal subset instead of every patch's release notes.
+  deltas=$(printf '%s' "$deltas" | awk '
+    /^[^[:space:]]/ { print; next }
+    /^[[:space:]]*$/ { print; next }
+    /CVE-|GHSA-|[Ss]ecurity|[Bb]reaking|[Dd]eprecat|CRITICAL|critical/ { print }
+  ')
+fi
+
+scope_suffix=""
+[ "$summary_only" -eq 1 ] && scope_suffix=", summary"
+echo "RECENT_DEPS_CHANGES (cutoff: $cutoff, source: $source_label, scope: ${scope_label}${scope_suffix}):"
 if [ -z "${GITHUB_TOKEN:-}" ]; then
   echo "(set GITHUB_TOKEN to lift release-notes rate limit from 60/h → 5000/h)"
 fi
