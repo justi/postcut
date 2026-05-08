@@ -39,7 +39,7 @@ assert_unsupported() {
   printf 'ok    %-30s\n' "$desc"
 }
 
-assert_unsupported "empty-dir" "v0.2 supports only Ruby projects"  "no lockfile, no detection"
+assert_unsupported "empty-dir" "v0.3 supports only Ruby projects"  "no lockfile, no detection"
 assert_unsupported "node"      "Node.js / npm project detected"     "node — package.json"
 assert_unsupported "python"    "Python project detected"            "python — pyproject.toml"
 assert_unsupported "rust"      "Rust / cargo project detected"      "rust — Cargo.toml"

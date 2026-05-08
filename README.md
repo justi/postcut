@@ -1,6 +1,6 @@
 # postcut
 
-> CLI that returns a string of dependency deltas since your LLM's training cutoff. Pipe it to any model.
+> Offline-prep dependency context for your LLM. Run before you fly; `cat` the doc into your chat session at 35,000 ft.
 
 ## Install
 
@@ -15,34 +15,57 @@ Requires `bash 3.2+`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
 ## Usage
 
 ```bash
-postcut --model claude-opus-4-7 --path ./my-rails-app
+cd my-rails-app
+bundle install
+postcut                # writes .postcut/<model>.md per model
 ```
 
-Output (truncated):
+Default flow: postcut reads the model list from `~/.postcut/.config/models` (one model id per line). For each, it resolves the cutoff via models.dev, walks your `Gemfile.lock`, and writes a markdown document to `.postcut/<model>.md` — self-contained, ready to paste.
+
+Sample document:
+
+```markdown
+# postcut — my-rails-app
+
+| Field | Value |
+|---|---|
+| Generated | 2026-05-08 |
+| Model | `claude-opus-4-7` |
+| Cutoff | 2026-01-31 (source: models.dev/claude-opus-4-7) |
+| Scope | 32 direct deps (Gemfile) |
+| Updates | 8 gem(s) post-cutoff |
+
+## Dependency deltas
+
+### rails
+
+**8.1.2 (last seen) → 8.1.3 (current, 2026-03-24)**
+
+- [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
+- [actionview] 8.1.3: Fix encoding errors for non-ASCII string locals
+- 8.0.2.1: GHSA-76r7-hhxj-r776 [medium] CVE-2025-55193: ANSI escape injection
+
+### rake
+...
+```
+
+Configure your models once (`~/.postcut/.config/models`):
 
 ```
-RECENT_DEPS_CHANGES (cutoff: 2026-01-31, scope: 5 direct deps (Gemfile)):
-
-rails: 8.1.2 (last seen) → 8.1.3 (current, 2026-03-24)
-  [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
-  [actionview]   8.1.3: Fix encoding errors for non-ASCII string locals
-  [activestorage] 8.1.3: Fix Blob content-type predicates to handle nil
-  ...
-  8.0.2.1: GHSA-76r7-hhxj-r776 [medium] CVE-2025-55193: ANSI escape injection
-
-rake: 13.3.1 → 13.4.2 (2026-04-16)
-  13.4.0: refactor regexp; Fix RDoc formatting
-  13.4.2: Preserve ENV[TESTOPTS] when verbose
-
-sqlite3: 2.9.0 → 2.9.4 (2026-05-06)
-  2.9.1–2.9.4: vendored SQLite v3.51.1 → v3.53.1
+claude-opus-4-7
+claude-haiku-4-5
+gpt-5
 ```
+
+Then `postcut` produces `.postcut/claude-opus-4-7.md`, `.postcut/claude-haiku-4-5.md`, `.postcut/gpt-5.md` — pick whichever model you actually run with.
 
 ```bash
-postcut | pbcopy                 # paste into chat
+postcut --model claude-opus-4-7  # single model, skips config
+postcut --since 2026-01-31       # explicit cutoff (skips models.dev lookup)
 postcut --all                    # include transitive deps
-postcut --since 2025-06-01       # override cutoff
-postcut --summary                # security/breaking/deprecation only — compact LLM context
+postcut --summary                # security/breaking/deprecation only — compact context
+postcut --output my-context.md   # custom path (single model)
+postcut --stdout                 # legacy plain-text pipe (`postcut --stdout | pbcopy`)
 ```
 
 ## Modes — local vs HTTP
@@ -78,8 +101,12 @@ Set `GITHUB_TOKEN` to lift the rate limit on registry/advisory calls.
 
 ## Status
 
-`v0.3-dev` (dual-mode complete for Ruby — metadata, notes, advisories).
-No cache yet; ~10–30s on a typical Rails app once warm.
+`v0.3-dev`. Ruby only. Dual-mode complete (metadata, notes, advisories).
+Save mode + per-model snapshot is the new default; `--stdout` keeps the
+legacy pipe.
+
+Roadmap: Node.js, Python, Rust, Go adapters. Same offline-prep flow,
+different lockfile.
 
 ## License
 

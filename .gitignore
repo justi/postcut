@@ -7,6 +7,12 @@ TODO.md
 cache/
 .postcut-cache/
 
+# Per-project save dir (output of `postcut` save mode)
+.postcut/
+
+# User's local models config inside the install root
+.config/
+
 # OS / editor
 .DS_Store
 *.swp
