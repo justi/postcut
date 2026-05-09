@@ -2,6 +2,30 @@
 # GitHub Releases API helper.
 # Set GITHUB_TOKEN env var to lift rate limit from 60/h to 5000/h.
 
+# Truncate $1 to at most $2 chars, then strip any unclosed markdown link
+# at the tail. Without the link-aware step, a hard cut lands inside
+# `[label](url)` and produces broken markdown that confuses LLM consumers
+# of the generated doc — see issue #11.
+_truncate_safe() {
+  local s="$1"
+  local max="${2:-140}"
+  if [ "${#s}" -le "$max" ]; then
+    printf '%s' "$s"
+    return
+  fi
+  s="${s:0:$max}"
+  # Strip an unclosed `[label](url` (cut mid-URL). Then strip an unclosed
+  # `[label` (cut mid-label). Order matters: the first pattern requires a
+  # closing `]`, so it cannot eat a still-open label.
+  #
+  # Known limitation: nested-bracket labels (`[outer [inner](u)](url`)
+  # may leave a fragment of the outer label behind. CommonMark allows
+  # arbitrary nesting; release-note bullets in practice use flat links.
+  # Tracked as a follow-up — fixing it cleanly needs a real parser.
+  s=$(printf '%s' "$s" | sed -E 's/\[[^]]*\]\([^)]*$//; s/\[[^]]*$//')
+  printf '%s' "$s"
+}
+
 # Parse "https://github.com/owner/repo[.git][/...]" → "owner/repo". Empty if not github.
 parse_github_repo_from_url() {
   local url="${1:-}"
@@ -36,6 +60,14 @@ fetch_github_release_notes() {
   fi
 
   printf '%s' "$raw" | jq -r --arg vs "$versions_csv" '
+    # Truncate to N chars but back off from any unclosed markdown link
+    # at the tail. Mirrors _truncate_safe in bash; see issue #11.
+    def truncate_safe(max):
+      if length > max then
+        .[0:max]
+        | sub("\\[[^\\]]*\\]\\([^)]*$"; "")
+        | sub("\\[[^\\]]*$"; "")
+      else . end;
     . as $releases
     | ($vs | split(","))
     | map(
@@ -60,7 +92,7 @@ fetch_github_release_notes() {
                | map(select(test("^\\s*[*\\-] ")))
                | map(sub("^\\s*[*\\-]\\s+"; ""))
                | map(gsub("\\s+"; " "))
-               | map(.[0:140])
+               | map(truncate_safe(140))
                | .[0:3]) as $bullets
             | if ($cves | length) > 0 then
                 "  \($v): " + ($cves | join(" ")) + " [security]"
@@ -125,7 +157,7 @@ _parse_changelog_content() {
     [ "${count[$current_idx]}" -ge 3 ] && continue
     if [[ "$line" =~ ^[[:space:]]*[-*+][[:space:]]+(.*) ]]; then
       bullet="${BASH_REMATCH[1]}"
-      bullet="${bullet:0:140}"
+      bullet=$(_truncate_safe "$bullet" 140)
       if [ -n "${buf[$current_idx]}" ]; then
         buf[$current_idx]+="; $bullet"
       else
