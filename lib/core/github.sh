@@ -17,6 +17,11 @@ _truncate_safe() {
   # Strip an unclosed `[label](url` (cut mid-URL). Then strip an unclosed
   # `[label` (cut mid-label). Order matters: the first pattern requires a
   # closing `]`, so it cannot eat a still-open label.
+  #
+  # Known limitation: nested-bracket labels (`[outer [inner](u)](url`)
+  # may leave a fragment of the outer label behind. CommonMark allows
+  # arbitrary nesting; release-note bullets in practice use flat links.
+  # Tracked as a follow-up — fixing it cleanly needs a real parser.
   s=$(printf '%s' "$s" | sed -E 's/\[[^]]*\]\([^)]*$//; s/\[[^]]*$//')
   printf '%s' "$s"
 }

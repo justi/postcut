@@ -87,6 +87,15 @@ input3="leading text [done](http://x.test/y) tail filler $(printf 'z%.0s' {1..80
 out=$(_truncate_safe "$input3" 140)
 check_substr "complete link preserved" "[done](http://x.test/y)" "$out"
 
+# Boundary: exact-cap input passes through untouched.
+exact="$(printf 'a%.0s' {1..140})"
+out=$(_truncate_safe "$exact" 140)
+assert_eq "exact 140 chars: no truncation" "$exact" "$out"
+
+# Boundary: empty input is a no-op.
+out=$(_truncate_safe "" 140)
+assert_eq "empty input: empty output" "" "$out"
+
 # ---- 2. _parse_changelog_content integration ----
 
 # Use a real fixture so the heredoc parens don't fight bash's parser.
