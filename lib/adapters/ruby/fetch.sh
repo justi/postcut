@@ -2,17 +2,23 @@
 # Emit a multi-line delta block for a gem if anything was released after cutoff.
 #
 # Block format:
-#   <name>: <pre_cutoff_latest> (last seen) → <current_latest> (current, <YYYY-MM-DD>)
+#   <name>: <pre_cutoff_latest> (last seen) → <current_latest> (current, <YYYY-MM-DD>)[ | project: <pin>]
 #     <ver>: <bullet1>; <bullet2>; <bullet3>
 #     [<sub-gem>] <ver>: <bullets>                (Rails meta-gem only)
 #     <ver>: <GHSA-...> [<severity>] <CVE-...>: <summary>
 #
 # A first-release-post-cutoff gem uses "(introduced)" in place of the
 # pre-cutoff version. Silent if nothing post-cutoff.
+#
+# When `project_pin` is provided (typically the version from
+# Gemfile.lock) AND it differs from `current_latest`, a trailing
+# ` | project: <pin>` segment is appended so an LLM consumer can tell
+# what's actually installed apart from what's available — see issue #13.
 
 fetch_ruby_delta() {
   local name="$1"
   local cutoff="$2"
+  local project_pin="${3:-}"
 
   # 1. Versions: compute pre_cutoff_latest, current_latest, and post-cutoff version list.
   local versions_api="https://rubygems.org/api/v1/versions/${name}.json"
@@ -58,9 +64,16 @@ fetch_ruby_delta() {
   local pre_v cur_v cur_date post_versions
   IFS='|' read -r pre_v cur_v cur_date post_versions <<< "$tsv"
 
-  # 2. Header line
+  # 2. Header line — include project pin only when it differs from
+  # current_latest, so docs stay compact for fully-up-to-date gems.
   local pre_label="${pre_v:-(introduced)}"
-  printf '%s: %s (last seen) → %s (current, %s)\n' "$name" "$pre_label" "$cur_v" "$cur_date"
+  if [ -n "$project_pin" ] && [ "$project_pin" != "$cur_v" ]; then
+    printf '%s: %s (last seen) → %s (current, %s) | project: %s\n' \
+      "$name" "$pre_label" "$cur_v" "$cur_date" "$project_pin"
+  else
+    printf '%s: %s (last seen) → %s (current, %s)\n' \
+      "$name" "$pre_label" "$cur_v" "$cur_date"
+  fi
 
   # Metadata: source URI (local via gem specification, HTTP fallback).
   local repo_uri=""
