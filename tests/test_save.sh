@@ -126,6 +126,49 @@ check_eq "default_save_dir: appends .postcut"         "/foo/bar/.postcut"  "$(de
 check_eq "default_save_dir: strips trailing slash"    "/foo/bar/.postcut"  "$(default_save_dir /foo/bar/)"
 check_eq "default_save_filename: model -> model.md"   "claude-opus-4-7.md" "$(default_save_filename claude-opus-4-7)"
 
+# ---- Monorepo dedup (issue #12) ----
+# Two gems with byte-identical bullets AND identical version transition
+# get grouped under a single H3 header. Update count still counts both.
+shared_deltas='sentry-rails: 5.23.0 (last seen) → 6.5.0 (current, 2026-03-16)
+  6.5.0: Add OTLP collector_url; Prefer HEROKU_BUILD_COMMIT; strict trace continuation
+  6.4.1: Track request queue time in Rails middleware
+  6.4.0: Add support for OTLP ingestion in sentry-opentelemetry
+
+sentry-ruby: 5.23.0 (last seen) → 6.5.0 (current, 2026-03-16)
+  6.5.0: Add OTLP collector_url; Prefer HEROKU_BUILD_COMMIT; strict trace continuation
+  6.4.1: Track request queue time in Rails middleware
+  6.4.0: Add support for OTLP ingestion in sentry-opentelemetry
+
+puma: 6.6.1 (last seen) → 8.0.1 (current, 2026-04-26)
+  7.0.0: Breaking changes
+'
+
+shared_doc=$(format_markdown_doc "monorepo-app" "claude-opus-4-7" "2026-01-31" "models.dev/claude-opus-4-7" "12 direct deps" "$shared_deltas")
+
+check_substr   "dedup: grouped H3 header"                "### sentry-rails, sentry-ruby"   "$shared_doc"
+check_no_lines_matching "dedup: no separate sentry-ruby H3" '^### sentry-ruby$'             "$shared_doc"
+check_substr   "dedup: standalone gem still gets own H3" "### puma"                         "$shared_doc"
+check_substr   "dedup: shared bullet emitted once"       "Add OTLP collector_url"           "$shared_doc"
+check_substr   "dedup: count counts gems not blocks"     "3 gem(s) post-cutoff"             "$shared_doc"
+check_eq "dedup: shared bullet appears exactly once" \
+  "1" \
+  "$(printf '%s\n' "$shared_doc" | grep -c "Add OTLP collector_url")"
+
+# Two gems sharing version transition but with DIFFERENT bullets must
+# stay split — dedup is byte-level, not heuristic.
+diverged_deltas='gem-a: 1.0.0 (last seen) → 2.0.0 (current, 2026-04-01)
+  2.0.0: feature A specific to gem-a
+
+gem-b: 1.0.0 (last seen) → 2.0.0 (current, 2026-04-01)
+  2.0.0: feature B specific to gem-b
+'
+
+diverged_doc=$(format_markdown_doc "split-app" "claude-opus-4-7" "2026-01-31" "models.dev/claude-opus-4-7" "2 direct deps" "$diverged_deltas")
+
+check_substr "diverged: gem-a keeps its own H3" "### gem-a"   "$diverged_doc"
+check_substr "diverged: gem-b keeps its own H3" "### gem-b"   "$diverged_doc"
+check_no_substr "diverged: not grouped"         "### gem-a, gem-b" "$diverged_doc"
+
 echo
 if [ "$failed" -eq 0 ]; then
   printf '%s/%s passed\n' "$ran" "$ran"
