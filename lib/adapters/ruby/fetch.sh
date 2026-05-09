@@ -20,6 +20,17 @@ fetch_ruby_delta() {
   local cutoff="$2"
   local project_pin="${3:-}"
 
+  # Multi-platform gems get a platform suffix in Gemfile.lock
+  # (e.g. "1.18.7-aarch64-linux-gnu"). Strip it so the comparison
+  # against the registry's `current_latest` doesn't false-positive
+  # and the rendered pin stays readable. Bundler always uses dots
+  # (not dashes) for prerelease tags, so dash-prefixed arch tokens
+  # are unambiguous.
+  if [ -n "$project_pin" ]; then
+    project_pin=$(printf '%s' "$project_pin" | \
+      sed -E 's/-(arm64|aarch64|x86_64|x64|x86|i686|powerpc64|sparc|riscv64|java|universal)(-.*)?$//')
+  fi
+
   # 1. Versions: compute pre_cutoff_latest, current_latest, and post-cutoff version list.
   local versions_api="https://rubygems.org/api/v1/versions/${name}.json"
   local versions_raw
