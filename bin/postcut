@@ -228,11 +228,11 @@ generate_deltas() {
   local cutoff="$1"
   local out=""
   local block=""
-  while read -r name _; do
+  while read -r name pin; do
     if [ -n "$filter_regex" ]; then
       [[ "$name" =~ $filter_regex ]] || continue
     fi
-    block=$(fetch_ruby_delta "$name" "$cutoff" 2>/dev/null) || block=""
+    block=$(fetch_ruby_delta "$name" "$cutoff" "$pin" 2>/dev/null) || block=""
     if [ -n "$block" ]; then
       out="${out}${block}"$'\n\n'
     fi

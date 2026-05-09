@@ -121,6 +121,27 @@ EOF
 out=$(load_models_config "$tmpdir")
 check_eq "config: only comments → empty" "" "$out"
 
+# ---- Project pin in header (issue #13) ----
+# Synthetic deltas containing the new `| project: X` tail. The reflow
+# must keep the segment intact inside the bold version-transition line.
+pin_deltas='avo: 3.19.3 (last seen) → 3.31.2 (current, 2026-04-23) | project: 3.31.0
+  3.31.2: fix run actions from custom controls
+
+bcrypt: 3.1.20 (last seen) → 3.1.22 (current, 2026-03-18)
+  3.1.22: TruffleRuby in CI
+'
+
+pin_doc=$(format_markdown_doc "pinned-app" "claude-opus-4-7" "2026-01-31" "models.dev/claude-opus-4-7" "2 direct deps" "$pin_deltas")
+
+check_substr "pin: H3 for avo emitted"                "### avo"                                             "$pin_doc"
+check_substr "pin: project segment kept inside bold"  "**3.19.3 (last seen) → 3.31.2 (current, 2026-04-23) | project: 3.31.0**" "$pin_doc"
+check_substr "pin: H3 for bcrypt (no pin segment)"    "### bcrypt"                                          "$pin_doc"
+check_substr "pin: bcrypt header has no project tail" "**3.1.20 (last seen) → 3.1.22 (current, 2026-03-18)**" "$pin_doc"
+# The bcrypt block must end its bold line at "**" — check by line-anchored regex.
+check_no_lines_matching "pin: bcrypt has no project segment" \
+  '\*\*3\.1\.20 \(last seen\) → 3\.1\.22 \(current, 2026-03-18\) \|' "$pin_doc"
+check_substr "pin: count still recognises both gems"  "2 gem(s) post-cutoff"                                "$pin_doc"
+
 # ---- Path helpers ----
 check_eq "default_save_dir: appends .postcut"         "/foo/bar/.postcut"  "$(default_save_dir /foo/bar)"
 check_eq "default_save_dir: strips trailing slash"    "/foo/bar/.postcut"  "$(default_save_dir /foo/bar/)"

@@ -104,6 +104,32 @@ check_substr "normal upgrade: date present"            "(current, 2025-12-01)" "
 out=$(fetch_ruby_delta old_gem 2025-09-01)
 check_empty "no post-cutoff: silent (no header)" "$out"
 
+# 4. Project pin (issue #13): when pin differs from current_latest,
+# emit a `| project: X` tail. When equal or empty, omit it.
+out=$(fetch_ruby_delta normal_gem 2025-09-01 1.5.0)
+check_substr    "pin differs: project segment appended"     "| project: 1.5.0" "$out"
+check_substr    "pin differs: full header preserved"        "→ 2.0.0 (current, 2025-12-01) | project: 1.5.0" "$out"
+
+out=$(fetch_ruby_delta normal_gem 2025-09-01 2.0.0)
+check_no_substr "pin equals latest: no project segment"     "| project:"       "$out"
+
+out=$(fetch_ruby_delta normal_gem 2025-09-01)
+check_no_substr "pin omitted (legacy callers): no segment"  "| project:"       "$out"
+
+# Multi-platform pin gets normalized: lockfile "1.5.0-aarch64-linux-gnu"
+# is shown as "1.5.0", not the full platform string.
+out=$(fetch_ruby_delta normal_gem 2025-09-01 1.5.0-aarch64-linux-gnu)
+check_substr    "platform pin: arch suffix stripped"        "| project: 1.5.0" "$out"
+check_no_substr "platform pin: no leftover arch token"      "aarch64"          "$out"
+
+# Platform pin equal to latest (full platform tag) → no segment.
+out=$(fetch_ruby_delta normal_gem 2025-09-01 2.0.0-arm64-darwin)
+check_no_substr "platform pin equals latest: no segment"    "| project:"       "$out"
+
+# Prerelease pin (Bundler uses dots, not dashes) is preserved.
+out=$(fetch_ruby_delta normal_gem 2025-09-01 1.5.0.rc1)
+check_substr    "prerelease pin (dot form): preserved"      "| project: 1.5.0.rc1" "$out"
+
 echo
 if [ "$failed" -eq 0 ]; then
   printf '%s/%s passed\n' "$ran" "$ran"
