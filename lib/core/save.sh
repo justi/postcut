@@ -3,6 +3,57 @@
 # Used by `bin/postcut` to turn delta blocks into a self-contained
 # offline-ready document, and to drive the multi-model snapshot loop.
 
+# Group gems whose post-cutoff content is byte-identical under a single
+# combined header. Triggered by monorepos that publish a unified
+# CHANGELOG to all sub-gems (e.g. sentry-rails + sentry-ruby from the
+# getsentry/sentry-ruby repo emit identical bullets). Pure cosmetic —
+# update_count stays per-gem. See issue #12.
+#
+# Stdin: raw delta blocks (`name: ... (current, ...)` + indented bullets,
+# blank-line separated).
+# Stdout: same structure, with shared blocks merged into `name1, name2: ...`.
+_dedup_monorepo_deltas() {
+  awk '
+    BEGIN { block_count = 0 }
+    function flush_block() {
+      if (cur_name == "") return
+      key = cur_rest "\x01" cur_bullets
+      if (key in seen) {
+        groups[seen[key]] = groups[seen[key]] ", " cur_name
+      } else {
+        seen[key] = block_count
+        order[block_count] = key
+        groups[block_count] = cur_name
+        block_count++
+      }
+      cur_name = ""; cur_rest = ""; cur_bullets = ""
+    }
+
+    /^[a-zA-Z0-9_.-]+: .* \(current,/ {
+      flush_block()
+      idx = index($0, ":")
+      cur_name = substr($0, 1, idx - 1)
+      cur_rest = substr($0, idx + 2)
+      next
+    }
+    /^[[:space:]]/ { cur_bullets = cur_bullets $0 "\n"; next }
+    /^[[:space:]]*$/ { next }
+
+    END {
+      flush_block()
+      for (i = 0; i < block_count; i++) {
+        key = order[i]
+        sep = index(key, "\x01")
+        rest = substr(key, 1, sep - 1)
+        bullets = substr(key, sep + 1)
+        if (i > 0) print ""
+        printf "%s: %s\n", groups[i], rest
+        printf "%s", bullets
+      }
+    }
+  '
+}
+
 # format_markdown_doc <project> <model> <cutoff> <cutoff_source> <scope_label> <deltas>
 # Emits a markdown document on stdout. The body (`<deltas>`) is the raw
 # fetch_ruby_delta output — header lines + indented bullets — and we
@@ -48,10 +99,14 @@ format_markdown_doc() {
   # Reflow: a header line opens a new H3, bullet lines become markdown
   # list items. Blank lines separate gems. Markdown links inside bullets
   # are kept intact since they often point to PRs/CVEs.
-  printf '%s\n' "$deltas" | awk '
-    /^[a-zA-Z0-9_.-]+: .* \(current,/ {
+  #
+  # Header regex now accepts comma-joined gem names so monorepo siblings
+  # merged by _dedup_monorepo_deltas (e.g. "sentry-rails, sentry-ruby:")
+  # still parse as a section header.
+  printf '%s\n' "$deltas" | _dedup_monorepo_deltas | awk '
+    /^[a-zA-Z0-9_.-]+(, [a-zA-Z0-9_.-]+)*: .* \(current,/ {
       if (in_block) print ""
-      # split "name: rest"
+      # split "name(, name)*: rest"
       idx = index($0, ":")
       name = substr($0, 1, idx - 1)
       rest = substr($0, idx + 1)
