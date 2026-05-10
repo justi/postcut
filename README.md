@@ -24,10 +24,10 @@
 
 - [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
 - [actionview] 8.1.3: Fix encoding errors for non-ASCII string locals
-- 8.0.2.1: GHSA-76r7-hhxj-r776 [medium] CVE-2025-55193: ANSI escape injection
+- 8.1.3: GHSA-h4wq-7r2x-9j3p [medium] CVE-2026-12104: SQL injection via deprecated query API
 ```
 
-`cat .postcut/claude-opus-4-7.md | pbcopy` → paste into Claude → done arguing about Rails 7 syntax on a Rails 8 app.
+`cat .postcut/claude-opus-4-7.md | pbcopy` → paste into Claude → it sees the 8.1.3 patch and the CVE before it touches your code.
 
 ## Why this exists
 
@@ -111,7 +111,7 @@ Set `GITHUB_TOKEN` to lift the rate limit on registry/advisory calls (60/h → 5
 
 ## Why I built this
 
-I was on a flight to Tokyo, no wifi, debugging a Rails 8.1 app with Claude. Three prompts in: model suggested a Rails 7 method that doesn't exist anymore. Fourth: a gem version with an open CVE. I spent the rest of the flight pasting CHANGELOGs from memory.
+I was on a flight to Tokyo, no wifi, debugging a Rails 8.1 app with Claude. Three prompts in: model confidently called an API the latest patch had quietly changed. Fourth: a gem version with an open CVE I'd patched two days earlier. I spent the rest of the flight pasting CHANGELOGs from memory.
 
 postcut runs once before the flight. The model gets the diff it didn't have. Same trick works on any LLM workflow — coding assistant, code review, refactor — anywhere stale dependency knowledge bites.
 
@@ -125,12 +125,12 @@ Same offline-prep flow, different lockfile:
 - **Python** (`uv.lock`, `poetry.lock`) — same deal.
 - **Rust**, **Go** — further out.
 
-The adapter surface is small (~4 functions) — fork-and-PR welcome.
+The adapter surface is small — a lockfile parser plus three local/HTTP function pairs (metadata, notes, advisories), seven functions total. Fork-and-PR welcome.
 
 ## Community
 
 - **Found a gem that doesn't expand correctly?** Open an issue with the `Gemfile.lock` line — I read every one.
-- **Idea or use case I missed?** GitHub Discussions, or PR welcome.
+- **Idea or use case I missed?** Open an issue tagged `enhancement`, or send a PR.
 - **Built something on top of postcut?** I want to know.
 
 ## License
