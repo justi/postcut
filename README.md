@@ -10,6 +10,8 @@ curl -fsSL https://raw.githubusercontent.com/justi/postcut/main/install.sh | bas
 
 Clones to `~/.postcut`, symlinks `bin/postcut` into the first writable bin dir on your PATH (`/usr/local/bin`, `~/.local/bin`, `~/bin`), seeds `~/.postcut/.config/models` with a commented template, and smoke-tests `postcut --version`. Re-running pulls the latest changes and keeps your edits to the config file.
 
+To pull updates without re-running the installer: `postcut --update` (fast-forwards the install dir; refuses on a dirty worktree).
+
 If `gh` is authenticated, the installer prints (does not write) the `GITHUB_TOKEN` export line you can drop into your shell rc to lift the GitHub rate limit (60/h → 5000/h).
 
 Manual install:

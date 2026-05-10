@@ -57,6 +57,9 @@ OPTIONS:
   --output PATH        Write to PATH instead of `.postcut/<model>.md`.
                        Only valid with a single model.
   --stdout             Emit to stdout instead of saving (legacy / pipe).
+  --update             Pull the latest postcut into the install
+                       directory ($ROOT) and exit. Refuses if it isn't
+                       a git clone or has uncommitted changes.
   -h, --help           Show this help.
   -v, --version        Show version.
 
@@ -82,6 +85,7 @@ include_transitive=0
 summary_only=0
 output_path=""
 mode_stdout=0
+do_update=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -92,11 +96,59 @@ while [ $# -gt 0 ]; do
     --summary)    summary_only=1; shift ;;
     --output)     output_path="$2"; shift 2 ;;
     --stdout)     mode_stdout=1; shift ;;
+    --update)     do_update=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     -v|--version) echo "postcut $VERSION"; exit 0 ;;
     *)            echo "postcut: unknown option: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+# --update is a self-update sink: pull the install dir to latest origin
+# and exit. Refuses to coexist with delta-generation flags so a stray
+# argument can't silently turn an update into a no-op run.
+if [ "$do_update" -eq 1 ]; then
+  if [ -n "$model_explicit" ] || [ -n "$since" ] || [ "$path" != "." ] \
+     || [ "$include_transitive" -ne 0 ] || [ "$summary_only" -ne 0 ] \
+     || [ -n "$output_path" ] || [ "$mode_stdout" -ne 0 ]; then
+    echo "postcut: --update takes no other flags" >&2
+    exit 2
+  fi
+  if [ ! -d "$ROOT/.git" ]; then
+    echo "postcut: install at $ROOT is not a git clone — cannot --update" >&2
+    echo "        re-run install.sh to switch to a git-managed install" >&2
+    exit 1
+  fi
+  dirty=$(git -C "$ROOT" status --porcelain 2>/dev/null || true)
+  if [ -n "$dirty" ]; then
+    echo "postcut: $ROOT has uncommitted changes — refusing to --update" >&2
+    printf '%s\n' "$dirty" >&2
+    echo "        commit, stash, or revert them and re-run" >&2
+    exit 1
+  fi
+  before=$(git -C "$ROOT" rev-parse --short HEAD)
+  if ! git -C "$ROOT" symbolic-ref --quiet HEAD >/dev/null 2>&1; then
+    echo "postcut: $ROOT is on a detached HEAD — re-run install.sh to" >&2
+    echo "        switch to a tracked branch" >&2
+    exit 1
+  fi
+  branch=$(git -C "$ROOT" symbolic-ref --short HEAD)
+  if ! git -C "$ROOT" fetch --quiet origin "$branch" 2>&1; then
+    echo "postcut: git fetch failed for $branch" >&2
+    exit 1
+  fi
+  if ! git -C "$ROOT" pull --ff-only --quiet origin "$branch" 2>&1; then
+    echo "postcut: git pull --ff-only failed (local branch diverged?)" >&2
+    exit 1
+  fi
+  after=$(git -C "$ROOT" rev-parse --short HEAD)
+  if [ "$before" = "$after" ]; then
+    echo "postcut: already up to date ($after)"
+  else
+    count=$(git -C "$ROOT" rev-list --count "$before..$after")
+    echo "postcut: updated $before → $after ($count commit(s))"
+  fi
+  exit 0
+fi
 
 # Resolve absolute project path so ".postcut/" lands where the user
 # expects regardless of cwd at exec time.
