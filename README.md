@@ -10,9 +10,9 @@
 
 | Field | Value |
 |---|---|
-| Generated | 2025-09-12 |
-| Model | `qwen2.5-coder-7b` |
-| Cutoff | 2024-07-15 (source: models.dev/qwen2.5-coder-7b) |
+| Generated | 2026-05-11 |
+| Model | `qwen3.6-35b-a3b` |
+| Cutoff | 2025-04-15 (source: --since) |
 | Scope | 32 direct deps (Gemfile) |
 | Updates | 14 gem(s) post-cutoff |
 
@@ -23,22 +23,22 @@
 
 ### rails
 
-**7.1.3.4 (last seen) → 8.0.2 (current, 2025-03-12) | project: 8.0.1**
+**8.0.2 (last seen) → 8.1.3 (current, 2026-03-24) | project: 8.1.2**
 
-- 7.2.0: Authentication generator; browser detection helpers; YJIT enabled by default
-- 8.0.0: **Breaking** Solid Queue / Solid Cache / Solid Cable replace Redis as defaults
-- 8.0.0: **Breaking** `bin/setup` rewritten; deprecates `--skip-decrypted-diffs`
-- [activerecord] 8.0.1: composite-key fix in `find_by` with eager loading
-- 8.0.0.1: GHSA-XXXX-XXXX-XXXX [medium] CVE-2025-XXXXX: <real advisory note from ruby-advisory-db / GitHub Advisories>
+- 8.0.3: PostgreSQL adapter timezone regression fix; security backport for `params.permit`
+- 8.1.0: **Breaking** Active Job uses Solid Queue by default in new apps; legacy adapters opt-in
+- 8.1.0: composite primary keys promoted from edge to core
+- [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
+- 8.1.2: GHSA-XXXX-XXXX-XXXX [medium] CVE-2026-XXXXX: <real advisory note from ruby-advisory-db / GitHub Advisories>
 ```
 
-`cat .postcut/qwen2.5-coder-7b.md | pbcopy` → paste into your local model → done arguing about Rails 7 syntax on a Rails 8 app.
+`cat .postcut/qwen3.6-35b-a3b.md | pbcopy` → paste into your local model → done arguing about Rails 8.0 patterns on a Rails 8.1 app.
 
 ## Why this exists
 
 LLM training cutoffs lag 3–12 months. Your `Gemfile.lock` doesn't. The gap is where deprecated APIs and missed CVEs live — and the model will confidently reason from old knowledge unless you hand it the diff.
 
-If you've ever caught a small local coder model proposing Rails 7 patterns on a Rails 8 app, or any LLM recommending a gem version with an open advisory — that's the gap. postcut closes it in one bash command, before you lose internet.
+If you've ever caught a local coder model proposing Rails 8.0 patterns on a Rails 8.1 app, or any LLM recommending a gem version with an open advisory — that's the gap. postcut closes it in one bash command, before you lose internet.
 
 ## Install
 
@@ -62,26 +62,28 @@ Requires `bash 3.2+`, `git`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
 ```bash
 cd my-rails-app
 bundle install
-postcut --model qwen2.5-coder-7b   # writes .postcut/qwen2.5-coder-7b.md
+postcut --model qwen3.6-35b-a3b --since 2025-04-15   # writes .postcut/qwen3.6-35b-a3b.md
 ```
 
-That's the whole first run. `cat .postcut/qwen2.5-coder-7b.md | pbcopy`, paste into your local model (ollama, llama.cpp, LM Studio — whatever you run), done.
+That's the whole first run. `cat .postcut/qwen3.6-35b-a3b.md | pbcopy`, paste into your local model (ollama, llama.cpp, LM Studio — whatever you run), done.
+
+`--since` is needed when models.dev doesn't yet have your model's cutoff. For models it does know (e.g. `claude-opus-4-7`, `gpt-5`), drop `--since` and let postcut resolve.
 
 Want multiple models per run (one for the flight, one for when you have wifi)? Configure once at `~/.postcut/.config/models`:
 
 ```
-qwen2.5-coder-7b
+qwen3.6-35b-a3b
 codestral-22b
 claude-opus-4-7
 ```
 
-Then plain `postcut` produces `.postcut/qwen2.5-coder-7b.md`, `.postcut/codestral-22b.md`, `.postcut/claude-opus-4-7.md` — pick whichever you actually have running.
+Then plain `postcut` produces `.postcut/qwen3.6-35b-a3b.md`, `.postcut/codestral-22b.md`, `.postcut/claude-opus-4-7.md` — pick whichever you actually have running.
 
 Other flags:
 
 ```bash
-postcut --model qwen2.5-coder-7b # single model, skips config
-postcut --since 2024-07-15       # explicit cutoff (skips models.dev lookup)
+postcut --model qwen3.6-35b-a3b  # single model, skips config
+postcut --since 2025-04-15       # explicit cutoff (skips models.dev lookup)
 postcut --path ~/code/my-app     # run against a project other than cwd
 postcut --all                    # include transitive deps
 postcut --summary                # security/breaking/deprecation only — compact context
@@ -116,7 +118,7 @@ Set `GITHUB_TOKEN` to lift the rate limit on release-notes/advisory calls (60/h 
 
 ## Why I built this
 
-I was on a flight to Tokyo, no wifi, debugging a Rails 8.0 app with a 7B coder model running locally via ollama. Three prompts in: model confidently called an API from Rails 7 — its training had ended fourteen months earlier, well before the 8.0 release. Fourth: a gem version with an open CVE I'd patched two days earlier. I spent the rest of the flight pasting CHANGELOGs from memory.
+I was on a flight to Tokyo, no wifi, debugging a Rails 8.1 app with qwen3.6-35b-a3b running locally via ollama. Three prompts in: model confidently called an API from Rails 8.0 — its training had ended thirteen months earlier, before the 8.1 release. Fourth: a gem version with an open CVE I'd patched two days earlier. I spent the rest of the flight pasting CHANGELOGs from memory.
 
 postcut runs once before the flight, while you still have internet. The model gets the diff it didn't have. Same trick works for hosted models too — you just stop wasting tokens correcting the same stale-knowledge mistakes — but offline is where it actually saves the session.
 
