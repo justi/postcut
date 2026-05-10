@@ -18,13 +18,16 @@
 
 ## Dependency deltas
 
+> Each section below describes how a gem changed since the model's training cutoff.
+> Use the post-cutoff version's API; flag breaking-change versions explicitly.
+
 ### rails
 
 **8.1.2 (last seen) → 8.1.3 (current, 2026-03-24) | project: 8.1.2**
 
 - [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
 - [actionview] 8.1.3: Fix encoding errors for non-ASCII string locals
-- 8.1.3: GHSA-h4wq-7r2x-9j3p [medium] CVE-2026-12104: SQL injection via deprecated query API
+- 8.1.3: GHSA-XXXX-XXXX-XXXX [medium] CVE-2026-XXXXX: <real advisory note from ruby-advisory-db / GitHub Advisories>
 ```
 
 `cat .postcut/claude-opus-4-7.md | pbcopy` → paste into Claude → it sees the 8.1.3 patch and the CVE before it touches your code.
@@ -41,7 +44,7 @@ If you've ever caught Claude suggesting a method that no longer exists, or GPT r
 curl -fsSL https://raw.githubusercontent.com/justi/postcut/main/install.sh | bash
 ```
 
-Installs to `~/.postcut`, symlinks into PATH. Re-run to update, or `postcut --update`.
+Installs to `~/.postcut` and symlinks into PATH when it finds a writable bin dir (otherwise the installer prints an `export PATH=...` line you can drop into your shell rc). Re-run to update, or `postcut --update`.
 
 Manual:
 
@@ -103,7 +106,7 @@ gem install bundler-audit
 bundle-audit update    # one-time, syncs the local CVE DB
 ```
 
-Set `GITHUB_TOKEN` to lift the rate limit on registry/advisory calls (60/h → 5000/h).
+Set `GITHUB_TOKEN` to lift the rate limit on release-notes/advisory calls (60/h → 5000/h). RubyGems registry calls are unauthenticated.
 
 ## Status
 
