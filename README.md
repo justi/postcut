@@ -1,42 +1,9 @@
 # postcut
 
-> Offline-prep dependency context for your LLM. Run before you fly; `cat` the doc into your chat session at 35,000 ft.
+> **Stop Claude from hallucinating on your Gemfile.**
+> postcut diffs your `Gemfile.lock` against the model's training cutoff and writes a markdown brief you paste into the chat. CVEs, breaking changes, version deltas — what Claude, GPT, or whatever coding model you use doesn't know yet.
 
-## Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/justi/postcut/main/install.sh | bash
-```
-
-Clones to `~/.postcut`, symlinks `bin/postcut` into the first writable bin dir on your PATH (`/usr/local/bin`, `~/.local/bin`, `~/bin`), seeds `~/.postcut/.config/models` with a commented template, and smoke-tests `postcut --version`. Re-running pulls the latest changes and keeps your edits to the config file.
-
-To pull updates without re-running the installer: `postcut --update` (fast-forwards the install dir; refuses on a dirty worktree).
-
-If `gh` is authenticated, the installer prints (does not write) the `GITHUB_TOKEN` export line you can drop into your shell rc to lift the GitHub rate limit (60/h → 5000/h).
-
-Manual install:
-
-```bash
-git clone https://github.com/justi/postcut.git ~/.postcut
-ln -s ~/.postcut/bin/postcut /usr/local/bin/postcut
-```
-
-Requires `bash 3.2+`, `git`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
-
-Optional: `gem install bundler-audit && bundle-audit update` enables the
-local CVE database (lifts security checks off the GitHub Advisories API).
-
-## Usage
-
-```bash
-cd my-rails-app
-bundle install
-postcut                # writes .postcut/<model>.md per model
-```
-
-Default flow: postcut reads the model list from `~/.postcut/.config/models` (one model id per line). For each, it resolves the cutoff via models.dev, walks your `Gemfile.lock`, and writes a markdown document to `.postcut/<model>.md` — self-contained, ready to paste.
-
-Sample document:
+## What it generates
 
 ```markdown
 # postcut — my-rails-app
@@ -53,17 +20,49 @@ Sample document:
 
 ### rails
 
-**8.1.2 (last seen) → 8.1.3 (current, 2026-03-24)**
+**8.1.2 (last seen) → 8.1.3 (current, 2026-03-24) | project: 8.1.2**
 
 - [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
 - [actionview] 8.1.3: Fix encoding errors for non-ASCII string locals
 - 8.0.2.1: GHSA-76r7-hhxj-r776 [medium] CVE-2025-55193: ANSI escape injection
-
-### rake
-...
 ```
 
-Configure your models once (`~/.postcut/.config/models`):
+`cat .postcut/claude-opus-4-7.md | pbcopy` → paste into Claude → done arguing about Rails 7 syntax on a Rails 8 app.
+
+## Why this exists
+
+LLM training cutoffs lag 3–12 months. Your `Gemfile.lock` doesn't. The gap is where deprecated APIs and missed CVEs live — and the model will confidently reason from old knowledge unless you hand it the diff.
+
+If you've ever caught Claude suggesting a method that no longer exists, or GPT recommending a gem version with an open advisory — that's the gap. postcut closes it in one bash command.
+
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/justi/postcut/main/install.sh | bash
+```
+
+Installs to `~/.postcut`, symlinks into PATH. Re-run to update, or `postcut --update`.
+
+Manual:
+
+```bash
+git clone https://github.com/justi/postcut.git ~/.postcut
+ln -s ~/.postcut/bin/postcut /usr/local/bin/postcut
+```
+
+Requires `bash 3.2+`, `git`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
+
+## Usage
+
+```bash
+cd my-rails-app
+bundle install
+postcut --model claude-opus-4-7   # writes .postcut/claude-opus-4-7.md
+```
+
+That's the whole first run. `cat .postcut/claude-opus-4-7.md | pbcopy`, paste into Claude, done.
+
+Want multiple models per run (so you can pick whichever you actually have open)? Configure once at `~/.postcut/.config/models`:
 
 ```
 claude-opus-4-7
@@ -71,14 +70,9 @@ claude-haiku-4-5
 gpt-5
 ```
 
-Then `postcut` produces `.postcut/claude-opus-4-7.md`, `.postcut/claude-haiku-4-5.md`, `.postcut/gpt-5.md` — pick whichever model you actually run with.
+Then plain `postcut` produces `.postcut/claude-opus-4-7.md`, `.postcut/claude-haiku-4-5.md`, `.postcut/gpt-5.md`.
 
-In flight, no internet:
-
-```bash
-cat .postcut/claude-opus-4-7.md | pbcopy   # paste into Claude
-cat .postcut/gpt-5.md                      # or read it yourself
-```
+Other flags:
 
 ```bash
 postcut --model claude-opus-4-7  # single model, skips config
@@ -88,13 +82,12 @@ postcut --all                    # include transitive deps
 postcut --summary                # security/breaking/deprecation only — compact context
 postcut --output my-context.md   # custom path (single model)
 postcut --stdout                 # legacy plain-text pipe (`postcut --stdout | pbcopy`)
+postcut --update                 # fast-forward the install dir
 ```
 
 ## Modes — local vs HTTP
 
-postcut auto-detects the Ruby toolchain in `PATH` — no flag. Three
-of four data layers go local when `gem` is around; only the version
-registry still hits the network.
+postcut auto-detects the Ruby toolchain in `PATH` — no flag needed.
 
 | Layer | Local source | HTTP fallback |
 |---|---|---|
@@ -103,15 +96,6 @@ registry still hits the network.
 | Release notes | gem CHANGELOG.md from `gem env gemdir` — Rails meta-gem expands into the 12 sub-gem CHANGELOGs | GitHub Releases → raw CHANGELOG.md |
 | CVE / security | `bundler-audit` + ruby-advisory-db | GitHub Advisories DB |
 
-What you gain with the local path:
-
-- **Rails meta-gem expands** into per-component notes (`[activerecord]`,
-  `[actionview]`, …) — previously a silent skip, since `rails/rails`
-  doesn't ship a top-level CHANGELOG.
-- **Zero HTTP** for notes/metadata when the requested version ≤ what's
-  installed locally.
-- **Offline** beyond one `versions/<gem>.json` call per gem.
-
 To engage everything:
 
 ```bash
@@ -119,16 +103,35 @@ gem install bundler-audit
 bundle-audit update    # one-time, syncs the local CVE DB
 ```
 
-Set `GITHUB_TOKEN` to lift the rate limit on registry/advisory calls.
+Set `GITHUB_TOKEN` to lift the rate limit on registry/advisory calls (60/h → 5000/h).
 
 ## Status
 
-`v0.3.1`. Ruby only. Dual-mode complete (metadata, notes, advisories).
-Save mode + per-model snapshot is the default; `--stdout` keeps the
-legacy pipe. CI on every PR (GitHub Actions, full bash suite).
+`v0.3.1`. Ruby/Rails only — by design, for now. Dual-mode complete (metadata, notes, advisories). Save mode + per-model snapshot is the default; `--stdout` keeps the legacy pipe. ~205 bash tests, CI on every PR. I use postcut daily on a Rails 8 app — that's the smoke test that matters most to me.
 
-Roadmap: Node.js, Python, Rust, Go adapters. Same offline-prep flow,
-different lockfile.
+## Why I built this
+
+I was on a flight to Tokyo, no wifi, debugging a Rails 8.1 app with Claude. Three prompts in: model suggested a Rails 7 method that doesn't exist anymore. Fourth: a gem version with an open CVE. I spent the rest of the flight pasting CHANGELOGs from memory.
+
+postcut runs once before the flight. The model gets the diff it didn't have. Same trick works on any LLM workflow — coding assistant, code review, refactor — anywhere stale dependency knowledge bites.
+
+Solo project, MIT, scratching my own itch.
+
+## Roadmap (and where I need help)
+
+Same offline-prep flow, different lockfile:
+
+- **Node.js** (`package-lock.json`, `pnpm-lock.yaml`) — adapter contract is in `lib/adapters/`. If you live in Node and want this, open an issue tagged `adapter:node` — I'll pair on it.
+- **Python** (`uv.lock`, `poetry.lock`) — same deal.
+- **Rust**, **Go** — further out.
+
+The adapter surface is small (~4 functions) — fork-and-PR welcome.
+
+## Community
+
+- **Found a gem that doesn't expand correctly?** Open an issue with the `Gemfile.lock` line — I read every one.
+- **Idea or use case I missed?** GitHub Discussions, or PR welcome.
+- **Built something on top of postcut?** I want to know.
 
 ## License
 
