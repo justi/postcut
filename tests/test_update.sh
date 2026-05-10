@@ -93,6 +93,24 @@ check_substr "mutex: --update --model rejected"  "takes no other flags"  "$out"
 out=$("$INSTALL_BIN" --update --since 2025-01-01 2>&1 || true)
 check_substr "mutex: --update --since rejected"  "takes no other flags"  "$out"
 
+# `--path .` matches the default value, so the mutex check (which is
+# value-based, not flag-presence-based) lets it through. Lock that down
+# so a future refactor to flag-presence semantics doesn't silently start
+# rejecting an explicit `--path .`.
+out=$("$INSTALL_BIN" --update --path . 2>&1 || true)
+if printf '%s' "$out" | grep -qF "takes no other flags"; then
+  ran=$((ran + 1))
+  printf 'FAIL  %-60s\n' "mutex: --update --path . accepted (default value)"
+  printf '       got: %s\n' "$out"
+  failed=$((failed + 1))
+else
+  ran=$((ran + 1))
+  printf 'ok    %-60s\n' "mutex: --update --path . accepted (default value)"
+fi
+
+out=$("$INSTALL_BIN" --update --path /tmp 2>&1 || true)
+check_substr "mutex: --update --path /tmp rejected"  "takes no other flags"  "$out"
+
 # ---- 4. Dirty-worktree refusal -----------------------------------------------
 # Use an untracked file rather than editing a sourced lib script — bin/postcut
 # would execute the modified shell on next launch and the test would crash.
@@ -106,7 +124,30 @@ NOGIT_INSTALL="$WORKDIR/nogit"
 cp -R "$INSTALL" "$NOGIT_INSTALL"
 rm -rf "$NOGIT_INSTALL/.git"
 out=$("$NOGIT_INSTALL/bin/postcut" --update 2>&1 || true)
-check_substr "no-git: refuses with re-run-install hint"  "is not a git clone"  "$out"
+check_substr "no-git: refuses with re-run-install hint"  "is not a git worktree root"  "$out"
+
+# ---- 6. Linked worktree (.git is a file, not a directory) --------------------
+# Real-world case: a user runs `git worktree add` and points the install
+# at the linked worktree. The previous `[ -d .git ]` guard would have
+# false-rejected this even though git itself is happy to operate. We
+# don't need a real `git worktree add` — replicating the .git-is-a-file
+# layout that worktree creates is enough to exercise the guard. Origin
+# is shared via the gitdir pointer, so a real --update would fast-forward
+# the worktree's HEAD too; we only assert that the guard doesn't trip.
+WORKTREE_INSTALL="$WORKDIR/wt-install"
+cp -R "$INSTALL" "$WORKTREE_INSTALL"
+real_gitdir=$(cd "$INSTALL/.git" && pwd -P)
+rm -rf "$WORKTREE_INSTALL/.git"
+printf 'gitdir: %s\n' "$real_gitdir" > "$WORKTREE_INSTALL/.git"
+out=$("$WORKTREE_INSTALL/bin/postcut" --update 2>&1 || true)
+ran=$((ran + 1))
+if printf '%s' "$out" | grep -qF "is not a git worktree root"; then
+  printf 'FAIL  %-60s\n' "worktree: .git-as-file accepted (not falsely rejected)"
+  printf '       got: %s\n' "$out"
+  failed=$((failed + 1))
+else
+  printf 'ok    %-60s\n' "worktree: .git-as-file accepted (not falsely rejected)"
+fi
 
 echo
 if [ "$failed" -eq 0 ]; then

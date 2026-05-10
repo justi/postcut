@@ -113,8 +113,15 @@ if [ "$do_update" -eq 1 ]; then
     echo "postcut: --update takes no other flags" >&2
     exit 2
   fi
-  if [ ! -d "$ROOT/.git" ]; then
-    echo "postcut: install at $ROOT is not a git clone — cannot --update" >&2
+  # Validate $ROOT is itself a worktree root (regular clone, linked
+  # worktree, or submodule). `[ -d .git ]` would miss worktrees (.git is
+  # a file) and `rev-parse --git-dir` alone would walk up to a parent
+  # repo if the install happened to be nested inside one — and then we'd
+  # operate on the wrong repo. Comparing show-toplevel to $ROOT pins us
+  # to this directory specifically.
+  toplevel=$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null || true)
+  if [ -z "$toplevel" ] || [ "$(cd "$toplevel" && pwd -P)" != "$(cd "$ROOT" && pwd -P)" ]; then
+    echo "postcut: install at $ROOT is not a git worktree root — cannot --update" >&2
     echo "        re-run install.sh to switch to a git-managed install" >&2
     exit 1
   fi
@@ -132,12 +139,21 @@ if [ "$do_update" -eq 1 ]; then
     exit 1
   fi
   branch=$(git -C "$ROOT" symbolic-ref --short HEAD)
-  if ! git -C "$ROOT" fetch --quiet origin "$branch" 2>&1; then
+  # Fetch into FETCH_HEAD then merge --ff-only against THAT specific ref.
+  # `git pull` would re-fetch internally, so a push between our explicit
+  # fetch and the pull could land different commits than we just validated.
+  # Surface git's stderr verbatim so transient failures (network, bad
+  # remote URL, missing branch) aren't reduced to a single opaque line.
+  fetch_err=$(git -C "$ROOT" fetch origin "$branch" 2>&1)
+  fetch_status=$?
+  if [ "$fetch_status" -ne 0 ]; then
     echo "postcut: git fetch failed for $branch" >&2
+    [ -n "$fetch_err" ] && printf '%s\n' "$fetch_err" >&2
+    echo "        check network and: git -C $ROOT remote get-url origin" >&2
     exit 1
   fi
-  if ! git -C "$ROOT" pull --ff-only --quiet origin "$branch" 2>&1; then
-    echo "postcut: git pull --ff-only failed (local branch diverged?)" >&2
+  if ! git -C "$ROOT" merge --ff-only --quiet FETCH_HEAD 2>/dev/null; then
+    echo "postcut: ff-only merge failed (local branch diverged from origin/$branch)" >&2
     exit 1
   fi
   after=$(git -C "$ROOT" rev-parse --short HEAD)
