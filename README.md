@@ -1,7 +1,7 @@
 # postcut
 
-> **Stop Claude from hallucinating on your Gemfile.**
-> postcut diffs your `Gemfile.lock` against the model's training cutoff and writes a markdown brief you paste into the chat. CVEs, breaking changes, version deltas — what Claude, GPT, or whatever coding model you use doesn't know yet.
+> **Stop your LLM from hallucinating on your Gemfile.**
+> postcut diffs your `Gemfile.lock` against the model's training cutoff and writes a markdown brief you paste into the chat. CVEs, breaking changes, version deltas — what your local Qwen, your hosted Claude, GPT, or whatever coding model you use doesn't know yet.
 
 ## What it generates
 
@@ -10,11 +10,11 @@
 
 | Field | Value |
 |---|---|
-| Generated | 2026-05-08 |
-| Model | `claude-opus-4-7` |
-| Cutoff | 2026-01-31 (source: models.dev/claude-opus-4-7) |
+| Generated | 2026-05-11 |
+| Model | `qwen3.6-35b-a3b` |
+| Cutoff | 2025-04-15 (source: --since) |
 | Scope | 32 direct deps (Gemfile) |
-| Updates | 8 gem(s) post-cutoff |
+| Updates | 14 gem(s) post-cutoff |
 
 ## Dependency deltas
 
@@ -23,20 +23,21 @@
 
 ### rails
 
-**8.1.2 (last seen) → 8.1.3 (current, 2026-03-24) | project: 8.1.2**
+**8.0.2 (last seen) → 8.1.3 (current, 2026-03-24) | project: 8.1.2**
 
+- 8.0.3: PostgreSQL adapter timezone regression fix; security backport for `params.permit`
 - [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
 - [actionview] 8.1.3: Fix encoding errors for non-ASCII string locals
-- 8.1.3: GHSA-XXXX-XXXX-XXXX [medium] CVE-2026-XXXXX: <real advisory note from ruby-advisory-db / GitHub Advisories>
+- 8.1.2: GHSA-XXXX-XXXX-XXXX [medium] CVE-2026-XXXXX: <real advisory note from ruby-advisory-db / GitHub Advisories>
 ```
 
-`cat .postcut/claude-opus-4-7.md | pbcopy` → paste into Claude → it sees the 8.1.3 patch and the CVE before it touches your code.
+`cat .postcut/qwen3.6-35b-a3b.md | pbcopy` → paste into your local model → done arguing about Rails 8.0 patterns on a Rails 8.1 app.
 
 ## Why this exists
 
 LLM training cutoffs lag 3–12 months. Your `Gemfile.lock` doesn't. The gap is where deprecated APIs and missed CVEs live — and the model will confidently reason from old knowledge unless you hand it the diff.
 
-If you've ever caught Claude suggesting a method that no longer exists, or GPT recommending a gem version with an open advisory — that's the gap. postcut closes it in one bash command.
+If you've ever caught a local coder model proposing Rails 8.0 patterns on a Rails 8.1 app, or any LLM recommending a gem version with an open advisory — that's the gap. postcut closes it in one bash command, before you lose internet.
 
 ## Install
 
@@ -60,12 +61,14 @@ Requires `bash 3.2+`, `git`, `curl`, `jq`. Ruby (`Gemfile.lock`) only for now.
 ```bash
 cd my-rails-app
 bundle install
-postcut --model claude-opus-4-7   # writes .postcut/claude-opus-4-7.md
+postcut --model qwen3.6-35b-a3b --since 2025-04-15   # writes .postcut/qwen3.6-35b-a3b.md
 ```
 
-That's the whole first run. `cat .postcut/claude-opus-4-7.md | pbcopy`, paste into Claude, done.
+That's the whole first run. `cat .postcut/qwen3.6-35b-a3b.md | pbcopy`, paste into your local model (ollama, llama.cpp, LM Studio — whatever you run), done.
 
-Want multiple models per run (so you can pick whichever you actually have open)? Configure once at `~/.postcut/.config/models`:
+`--since` is needed when models.dev doesn't yet have your model's cutoff. For models it does know (e.g. `claude-opus-4-7`, `gpt-5`), drop `--since` and let postcut resolve.
+
+Want a snapshot per model in one run? Configure once at `~/.postcut/.config/models`:
 
 ```
 claude-opus-4-7
@@ -73,13 +76,13 @@ claude-haiku-4-5
 gpt-5
 ```
 
-Then plain `postcut` produces `.postcut/claude-opus-4-7.md`, `.postcut/claude-haiku-4-5.md`, `.postcut/gpt-5.md`.
+Then plain `postcut` produces `.postcut/claude-opus-4-7.md`, `.postcut/claude-haiku-4-5.md`, `.postcut/gpt-5.md` — pick whichever you actually have open. Multi-model config only works for models on models.dev; for local fine-tunes and anything the registry doesn't track, use the single-run `--model X --since Y` form above.
 
 Other flags:
 
 ```bash
-postcut --model claude-opus-4-7  # single model, skips config
-postcut --since 2026-01-31       # explicit cutoff (skips models.dev lookup)
+postcut --model claude-opus-4-7  # single model from models.dev, skips config
+postcut --model qwen3.6-35b-a3b --since 2025-04-15  # local model, explicit cutoff
 postcut --path ~/code/my-app     # run against a project other than cwd
 postcut --all                    # include transitive deps
 postcut --summary                # security/breaking/deprecation only — compact context
@@ -114,9 +117,9 @@ Set `GITHUB_TOKEN` to lift the rate limit on release-notes/advisory calls (60/h 
 
 ## Why I built this
 
-I was on a flight to Tokyo, no wifi, debugging a Rails 8.1 app with Claude. Three prompts in: model confidently called an API the latest patch had quietly changed. Fourth: a gem version with an open CVE I'd patched two days earlier. I spent the rest of the flight pasting CHANGELOGs from memory.
+I was on a flight to Tokyo, no wifi, debugging a Rails 8.1 app with qwen3.6-35b-a3b running locally via ollama. Three prompts in: model confidently called an API from Rails 8.0 — its training had ended thirteen months earlier, before the 8.1 release. Fourth: a gem version with an open CVE I'd patched two days earlier. I spent the rest of the flight pasting CHANGELOGs from memory.
 
-postcut runs once before the flight. The model gets the diff it didn't have. Same trick works on any LLM workflow — coding assistant, code review, refactor — anywhere stale dependency knowledge bites.
+postcut runs once before the flight, while you still have internet. The model gets the diff it didn't have. Same trick works for hosted models too — you just stop wasting tokens correcting the same stale-knowledge mistakes — but offline is where it actually saves the session.
 
 Solo project, MIT, scratching my own itch.
 
