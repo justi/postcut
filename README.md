@@ -26,9 +26,8 @@
 **8.0.2 (last seen) → 8.1.3 (current, 2026-03-24) | project: 8.1.2**
 
 - 8.0.3: PostgreSQL adapter timezone regression fix; security backport for `params.permit`
-- 8.1.0: **Breaking** Active Job uses Solid Queue by default in new apps; legacy adapters opt-in
-- 8.1.0: composite primary keys promoted from edge to core
 - [activerecord] 8.1.3: Fix `insert_all` log message; Restore previous instrumenter
+- [actionview] 8.1.3: Fix encoding errors for non-ASCII string locals
 - 8.1.2: GHSA-XXXX-XXXX-XXXX [medium] CVE-2026-XXXXX: <real advisory note from ruby-advisory-db / GitHub Advisories>
 ```
 
@@ -69,21 +68,21 @@ That's the whole first run. `cat .postcut/qwen3.6-35b-a3b.md | pbcopy`, paste in
 
 `--since` is needed when models.dev doesn't yet have your model's cutoff. For models it does know (e.g. `claude-opus-4-7`, `gpt-5`), drop `--since` and let postcut resolve.
 
-Want multiple models per run (one for the flight, one for when you have wifi)? Configure once at `~/.postcut/.config/models`:
+Want a snapshot per model in one run? Configure once at `~/.postcut/.config/models`:
 
 ```
-qwen3.6-35b-a3b
-codestral-22b
 claude-opus-4-7
+claude-haiku-4-5
+gpt-5
 ```
 
-Then plain `postcut` produces `.postcut/qwen3.6-35b-a3b.md`, `.postcut/codestral-22b.md`, `.postcut/claude-opus-4-7.md` — pick whichever you actually have running.
+Then plain `postcut` produces `.postcut/claude-opus-4-7.md`, `.postcut/claude-haiku-4-5.md`, `.postcut/gpt-5.md` — pick whichever you actually have open. Multi-model config only works for models on models.dev; for local fine-tunes and anything the registry doesn't track, use the single-run `--model X --since Y` form above.
 
 Other flags:
 
 ```bash
-postcut --model qwen3.6-35b-a3b  # single model, skips config
-postcut --since 2025-04-15       # explicit cutoff (skips models.dev lookup)
+postcut --model claude-opus-4-7  # single model from models.dev, skips config
+postcut --model qwen3.6-35b-a3b --since 2025-04-15  # local model, explicit cutoff
 postcut --path ~/code/my-app     # run against a project other than cwd
 postcut --all                    # include transitive deps
 postcut --summary                # security/breaking/deprecation only — compact context
