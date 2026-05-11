@@ -138,6 +138,11 @@ The adapter surface is small — a lockfile parser plus three local/HTTP functio
 - **Found a gem that doesn't expand correctly?** Open an issue with the `Gemfile.lock` line — I read every one.
 - **Idea or use case I missed?** Open an issue tagged `enhancement`, or send a PR.
 - **Built something on top of postcut?** I want to know.
+- **Using postcut on a real project?** Comment on the pinned discussion with your model + your typical workflow — that's how I learn what to build next.
+
+## Field notes
+
+Monthly write-ups about what I'm learning running postcut on real projects, what surprised me about offline LLM workflows, and what's changed since the last cutoff — see [`notes/`](./notes). New entry roughly every four to six weeks; subscribe by watching the repo (Releases) if you want a ping when one lands.
 
 ## License
 
